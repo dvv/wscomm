@@ -1,0 +1,11 @@
+published 100000 freemem 579334144
+published 200000 freemem 524353536
+published 300000 freemem 471535616
+published 400000 freemem 404111360
+published 500000 freemem 345575424
+published 600000 freemem 285134848
+published 700000 freemem 240693248
+published 800000 freemem 175812608
+published 900000 freemem 106991616
+published 1000000 freemem 54648832
+FATAL ERROR: CALL_AND_RETRY_2 Allocation failed - process out of memory

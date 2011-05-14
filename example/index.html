@@ -1,0 +1,139 @@
+<!doctype html>
+<head>
+	<meta charset="utf-8">
+	<!-- N.B. at least `ender -b underscore jeesh scriptjs json-browser` -->
+	<script type="text/javascript" src="ender.min.js"></script>
+	<script type="text/javascript">
+		// alias _
+		this._ = this.ender;
+		// augment IE. for how long, mf?!
+		if (typeof console === 'undefined') console = {log: alert};
+		window.dump = function() {console.log('DUMP', arguments);};
+		// load scripts
+		$.script([
+			'/socket.io/socket.io.js',
+			'wscomm.js'
+		], function socketReady() {
+			// scripts loaded
+			console.log('APPLOADED');//, _);
+			var caps = {
+				ping: function(cb, text) {
+					$(this.lid).append('<li>' + (text || 'Server pings you, dude!') + '</li>');
+				}
+			};
+			// establish websocket connection #1
+			window.comm = window.comm1 = new WSComm(null, {
+				//port: 3001,
+				ready: function(reset) {
+					// `this` is the socket. The only chance to keep it somewhere in closures
+					window.s1 = this;
+					// `this.context` is the context
+					// `reset` is whether to flush the current context
+					console.log('READY!', reset);
+					var context = this.context;
+					// not signed in?
+					if (!context.user || !context.user.id) return context.rpc('signin', '123');
+					// enable commands
+					$($('input[data-id]')[0]).parents('div',true).find('button').removeAttr('disabled');
+					// define local context
+					context.extend(_.extend({}, caps, {name: 'dvv aka Vladimir', lid: '#l1'}));
+				},
+				change: function() {
+					//console.log('CHANGE:');//, arguments);
+				},
+				disconnect: function() {
+					// `this` is the socket
+					console.log('DISCONNECT', this);
+				}
+			});
+// demonstrate multi connections work
+if (true) {
+			// establish websocket connection #2
+			window.comm2 = new WSComm(null, {
+				/* any other host and options you like! */
+				liveFunctions: true,
+				ready: function(reset) {
+					console.log('READY!', reset);
+					var context = this.context;
+					// N.B. notice the plain call of context remote function
+					if (!context.user || !context.user.id) return context.signin('123');
+					$($('input[data-id]')[1]).parents('div',true).find('button').removeAttr('disabled');
+					context.extend(_.extend({}, caps, {name: 'Vladimir aka dvv', lid: '#l2'}));
+				}
+			});
+			// establish websocket connection #N
+			window.comm3 = new WSComm(null, {
+				/* any other host and options you like! */
+				port: 3001,
+				ready: function(reset) {
+					console.log('READY!', reset);
+					window.s2 = this;
+					var context = this.context;
+					if (!context.user || !context.user.id) return context.rpc('signin', '123');
+					$($('input[data-id]')[2]).parents('div',true).find('button').removeAttr('disabled');
+					context.extend(_.extend({}, caps, {name: 'dronnikov@gmail.com', lid: '#l3'}));
+				}
+			});
+}
+$.domReady(function() {
+			// handle posting
+			$('body').delegate('button.send', 'click', function(ev) {
+				var input = $(this).previous();
+				var id = input.attr('data-id');
+				var text = input.val();
+				window['comm'+id].rpc('post', function() {
+					console.log('POSTED!', arguments);
+					input.val('');
+				}, text);
+			});
+			// handle joining
+			$('body').delegate('button.join', 'click', function(ev) {
+				var input = $(this).previous().previous();
+				var id = input.attr('data-id');
+				var text = input.val();
+				window['comm'+id].rpc('join', function(groups) {
+					console.log('JOINED!', arguments, this);
+					//this.groups = groups;
+					input.val('');
+				}, text);
+			});
+			// handle leaving
+			$('body').delegate('button.leave', 'click', function(ev) {
+				var input = $(this).previous().previous().previous();
+				var id = input.attr('data-id');
+				var text = input.val();
+				window['comm'+id].rpc('leave', function(groups) {
+					console.log('LEFT!', arguments);
+					//this.groups = groups;
+					input.val('');
+				}, text);
+			});
+			// handle signin
+			$('body').delegate('button.signin', 'click', function(ev) {
+				var input = $(this).previous().previous().previous().previous();
+				var id = input.attr('data-id');
+				var text = input.val();
+				window['comm'+id].rpc('signin', function() {
+					console.log('SIGNED!', arguments);
+					input.val('');
+				}, text);
+			});
+});
+		});
+	</script>
+</head>
+<body>
+<div>
+Your message as dvv: <input data-id="1" type="text"/><button class="send" disabled="disabled">Send</button><button class="join" disabled="disabled">Join</button><button class="leave" disabled="disabled">Leave</button><button class="signin" disabled="disabled">Sign In</button><br/>
+<ol id="l1"></ol>
+</div>
+<div>
+Your message as Vladimir: <input data-id="2" type="text"/><button class="send" disabled="disabled">Send</button><button class="join" disabled="disabled">Join</button><button class="leave" disabled="disabled">Leave</button><button class="signin" disabled="disabled">Sign In</button><br/>
+<ol id="l2"></ol>
+</div>
+<div>
+Your message as dronnikov@gmail.com: <input data-id="3" type="text"/><button class="send" disabled="disabled">Send</button><button class="join" disabled="disabled">Join</button><button class="leave" disabled="disabled">Leave</button><button class="signin" disabled="disabled">Sign In</button><br/>
+<ol id="l3"></ol>
+</div>
+</body>
+</html>

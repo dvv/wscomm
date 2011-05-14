@@ -1,0 +1,16 @@
+published 100000 freemem 637362176
+published 200000 freemem 616194048
+published 300000 freemem 591171584
+published 400000 freemem 551682048
+published 500000 freemem 515620864
+published 600000 freemem 476131328
+published 700000 freemem 444133376
+published 800000 freemem 408326144
+published 900000 freemem 363757568
+published 1000000 freemem 334807040
+published 1100000 freemem 289841152
+published 1200000 freemem 254652416
+published 1300000 freemem 219631616
+published 1400000 freemem 178110464
+published 1500000 freemem 137224192
+FATAL ERROR: JS Allocation failed - process out of memory
