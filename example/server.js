@@ -114,6 +114,11 @@ function middleware(req, res) {
 }
 
 //
+// setup persistence
+//
+var db = require('redis').createClient();
+
+//
 // websocket context
 //
 var wscontext = {
@@ -121,10 +126,31 @@ var wscontext = {
 	generateSessionId: function() {
 		return '123';
 	},
+	onDisconnect: function() {
+		// TODO: should we `this.save()` here, just in case ;)
+		console.log('DISCONNECTED1!', this.sessionId);
+	},
+	save: function() {
+		// backup the context, pruning both local and remote functions
+		db.set('session:' + this.sessionId, this.encode(this.context, true));
+		console.log('SAVED!');
+	},
 	ready: function() {
 		// `this` is the socket; here is the only place to memo it.
 		// setup initial context
-		this.context.extend(getContext.call(this, this.sessionId));
+		var self = this;
+		var caps = getContext.call(this, this.sessionId);
+		db.get('session:' + this.sessionId, function(err, result) {
+			if (result) {
+				var session = self.decode(result);
+				// set the context
+				self.update(session, true);
+			}
+			// update context with caps
+			self.update(caps);
+			// send the resulting context
+			self.update(null, false, true);
+		});
 	}
 };
 
@@ -141,29 +167,8 @@ if (true) {
 	http1.listen(3000);
 	// websocket
 	var ws1 = Ws.listen(http1, _.extend({}, wscontext, {
-		onDisconnect: function() {
-			// TODO: try to backup the context
-			var s;
-			db1.set('session:' + this.sessionId, s = this.encode(this.context));
-			console.log('DISCONNECTED1!', this.sessionId, s);
-		},
-		ready: function() {
-			var self = this;
-			var caps = getContext.call(this, this.sessionId);
-			db1.get('session:' + this.sessionId, function(err, result) {
-				console.log('FETCHED', self.sessionId, arguments);
-				if (result) {
-					var session = self.decode(result);
-					_.defaults(caps, session);
-				}
-				self.context.extend(caps);
-			});
-		}
 	}));
 	repl.context.ws1 = ws1;
-	// redis
-	var db1 = require('redis').createClient();
-	repl.context.db1 = db1;
 }
 
 //

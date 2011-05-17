@@ -157,16 +157,17 @@ function createContext() {
 	// serialize an object.
 	// replace functions in `obj` with THIS_IS_FUNC signatures
 	//
-	this.encode = function(obj) {
+	this.encode = function(obj, onlyVariables) {
 		var self = this;
 		function replacer(k, v) {
 			// N.B. live remote functions no pasaran!
 			if (_.isFunction(v) && !v.live) {
 				v = THIS_IS_FUNC;
 			}
+			if (onlyVariables && v === THIS_IS_FUNC) v = undefined;
 			return v;
 		}
-		// should circular deps occur, send nothing.
+		// should circular dependency occur, send nothing.
 		// FIXME: until socket.io has tunable parsers (we opened the issue!)
 		// even if we JSON.decycle(obj), the remote end won't parse ok
 		// FIXME: until socket.io has tunable stringifier
@@ -220,38 +221,48 @@ function createContext() {
 	};
 
 	//
-	// shallow extend the `dst` with properties of `src`.
+	// deeply extend the `dst` with properties of `src`.
 	// if a property of `src` is set to null then remove corresponding
 	// `dst` property.
-	// TODO: more elaborate version, may be even deep merge?
+	// N.B. arrays are cloned
 	//
 	function extend(dst, src) {
 		if (!src) return dst;
 		for (var prop in src) if (has(src, prop)) {
 			var v = src[prop];
-			/*if (Object(v) === v) {
-				if (!has(dst, prop)) {
-					if (_.isArray(v)) {
-						dst[prop] = [];
-					} else if (typeof v === 'object') {
-						dst[prop] = {};
+			var d = dst[prop];
+			// value is not ordinal?
+			if (Object(v) === v) {
+				// value is array?
+				if (Array.isArray(v)) {
+					// put its copy, not reference
+					dst[prop] = v.slice();
+					continue;
+				// value is object?
+				} else {
+					// destination has no such property? create one
+					if (!has(dst, prop)) dst[prop] = {};
+					// destination has such property and it's not ordinal?
+					if (Object(d) === d) {
+						// recurse to merge
+						extend(d, v);
+						continue;
 					}
 				}
-				extend(dst[prop], v);
-			} else*/ {
-				var d = dst[prop];
-				// report changes in properties.
+			}
+			// value is ordinal.
+			// first validate the supposed change
+			if (_.isFunction(socket.context.change) &&
 				// if `change` function returns something then inhibit
 				// the property assignment
-				if (_.isFunction(socket.context.change) &&
-					socket.context.change(prop, v, d) !== undefined)
-					continue;
-				// assign new value
-				if (v == null) {
-					delete dst[prop];
-				} else {
-					dst[prop] = v;
-				}
+				socket.context.change(prop, v, d) !== undefined)
+				continue;
+			// new value is undefined or null?
+			if (v == null) {
+				// remove the property
+				delete dst[prop];
+			} else {
+				dst[prop] = v;
 			}
 		}
 		return dst;
@@ -263,11 +274,14 @@ function createContext() {
 	this.update = function(changes, reset, send) {
 		var context = this.context;
 		// validate the changes
+		// FIXME: should validate _the resulting context_, not changes
+		/*
 		var errors = context.validate(changes, reset);
 		if (errors !== undefined) {
 			// N.B. exceptions are evil in async environment
 			return new Error('Changes not passed validation: ' + errors);
 		}
+		*/
 		// N.B. do not overwrite `context`, only mangle! That's why
 		// this way of purging old context
 		if (reset) {
@@ -278,6 +292,11 @@ function createContext() {
 		extend(context, changes);
 		// notify remote end that context has changed
 		if (send) {
+			// persist changes
+			if (_.isFunction(options.save)) {
+				options.save.call(this);
+			}
+			// send serialized context to the remote end
 			var s = this.encode({
 				cmd: 'context',
 				// N.B. no changes means to force sending the whole context.
@@ -346,8 +365,12 @@ function createContext() {
 			}
 			this.update.apply(this, message.params);
 			// fire 'ready' callback
-			if (CLIENT_SIDE && _.isFunction(this.context.ready)) {
-				this.context.ready.call(this, message.params[1]);
+			if (CLIENT_SIDE) {
+				_.isFunction(this.context.ready) &&
+					this.context.ready.call(this, message.params[1]);
+			// persist the context
+			} else {
+				// TODO: !
 			}
 		}
 	});

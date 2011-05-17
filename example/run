@@ -1,5 +1,5 @@
 #!/bin/sh
-#exec node server.js
-killall node
-node-inspector &
-exec node --debug server.js
+exec node server.js
+#killall node
+#node-inspector &
+#exec node --debug server.js

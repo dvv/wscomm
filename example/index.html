@@ -42,9 +42,13 @@
 				change: function() {
 					//console.log('CHANGE:');//, arguments);
 				},
-				disconnect: function() {
+				onDisconnect: function() {
 					// `this` is the socket
 					console.log('DISCONNECT', this);
+				},
+				onReconnect: function() {
+					// `this` is the socket
+					console.log('RECONNECT', this);
 				}
 			});
 // demonstrate multi connections work
