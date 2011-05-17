@@ -24,6 +24,7 @@
 			// establish websocket connection #1
 			window.comm = window.comm1 = new WSComm(null, {
 				//port: 3001,
+				liveFunctions: true,
 				ready: function(reset) {
 					// `this` is the socket. The only chance to keep it somewhere in closures
 					window.s1 = this;
@@ -47,7 +48,7 @@
 				}
 			});
 // demonstrate multi connections work
-if (true) {
+if (false) {
 			// establish websocket connection #2
 			window.comm2 = new WSComm(null, {
 				/* any other host and options you like! */

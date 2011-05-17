@@ -154,9 +154,10 @@ function createContext() {
 	this.cbs = {};
 
 	//
-	// replace functions in `msg` with THIS_IS_FUNC signatures
+	// serialize an object.
+	// replace functions in `obj` with THIS_IS_FUNC signatures
 	//
-	this.sendWithFunctions = function(msg) {
+	this.encode = function(obj) {
 		var self = this;
 		function replacer(k, v) {
 			// N.B. live remote functions no pasaran!
@@ -167,16 +168,29 @@ function createContext() {
 		}
 		// should circular deps occur, send nothing.
 		// FIXME: until socket.io has tunable parsers (we opened the issue!)
-		// even if we JSON.decycle(msg), the remote end won't parse ok
+		// even if we JSON.decycle(obj), the remote end won't parse ok
 		// FIXME: until socket.io has tunable stringifier
 		// we must workaround it
 		try {
-			var s = '~j~'+JSON.stringify(msg, replacer);
-			this.send(s);
+			var s = JSON.stringify(obj, replacer);
 		} catch(err) {
 			// ...silently fail
+			s = '';
 		}
+		return s;
 	}
+
+	//
+	// deserialize a string to the object.
+	// replace THIS_IS_FUNC signatures with functions
+	//
+	this.decode = function(str) {
+		var obj = JSON.parse(str);
+		if (options.liveFunctions) {
+			this.parseWithFunctions(obj);
+		}
+		return obj;
+	};
 
 	//
 	// revive functions from THIS_IS_FUNC signatures
@@ -264,13 +278,14 @@ function createContext() {
 		extend(context, changes);
 		// notify remote end that context has changed
 		if (send) {
-			this.sendWithFunctions({
+			var s = this.encode({
 				cmd: 'context',
 				// N.B. no changes means to force sending the whole context.
 				// this allows to group changes in "package" and send them
 				// in one go
 				params: reset || !changes ? [context, true] : [changes]
 			});
+			this.send('~j~' + s);
 		}
 	};
 
@@ -279,8 +294,9 @@ function createContext() {
 	// callback associated with this message `id`, at the remote side
 	//
 	function reply(id /*, args... */) {
-		var args = slice.call(arguments, 1);
+		// nothing to do unless `id` is set
 		if (!id) return;
+		var args = slice.call(arguments, 1);
 		this.send({cmd: 'reply', id: id, params: args});
 	};
 
@@ -295,10 +311,8 @@ function createContext() {
 		if (message.cmd === 'call' &&
 			(fn = drill(this.context, message.method))) {
 			// the signature of remotely callable method is
-			// function(callback[, arg1[, arg2[, ...]]]).
-			// N.B. we will reply to caller only if `message.id` is given.
-			// if no `message.id` is given, push a noop callback as a stub
-			// to fit the signature
+			// function(callback[, arg1[, arg2[, ...]]]). so we always place
+			// a callback stub to fit the signature
 			var args = [_.bind(reply, this, message.id)];
 			// optional arguments come from message.params
 			if (message.params) {
@@ -339,13 +353,18 @@ function createContext() {
 	});
 
 	//
-	// handle disconnect
-	// TODO: hookup all events?
+	// handle disconnect and reconnect
 	//
 	this.on('disconnect', function() {
-		// execute `options.disconnect` callback
-		if (_.isFunction(options.disconnect)) {
-			options.disconnect.call(this);
+		// execute `options.onDisconnect` callback
+		if (_.isFunction(options.onDisconnect)) {
+			options.onDisconnect.call(this);
+		}
+	});
+	this.on('reconnect', function() {
+		// execute `options.onReconnect` callback
+		if (_.isFunction(options.onReconnect)) {
+			options.onReconnect.call(this);
 		}
 	});
 
@@ -386,7 +405,7 @@ if (CLIENT_SIDE) {
 	};
 
 	// ender.js shim
-  if (typeof module !== 'undefined' && module.exports) {
+	if (typeof module !== 'undefined' && module.exports) {
 		module.exports.WSComm = WSComm;
 	// or poison the global
 	} else {
@@ -406,14 +425,43 @@ if (CLIENT_SIDE) {
 		_.defaults(options, {
 			transports: ['websocket', 'xhr-polling']
 		});
+
 		var IO = require('socket.io');
+		// patch listener to always provide request object
 		var onConnection = IO.Listener.prototype._onConnection;
-		IO.Listener.prototype._onConnection = function(transport, req, res, httpUpgrade, head) {
-			this.req = req;
-			onConnection.apply(this, arguments);
-		};
+		IO.Listener.prototype._onConnection =
+			function(transport, req, res, httpUpgrade, head) {
+				// memo the request
+				this.req = req;
+				onConnection.apply(this, arguments);
+			};
+		// patch client session id generator
+		if (options.generateSessionId) {
+			var Client = require('socket.io/lib/socket.io/client');
+			Client.prototype._generateSessionId = function() {
+				var sid;
+				// function is given? use return value
+				if (_.isFunction(options.generateSessionId)) {
+					sid = options.generateSessionId.call(this);
+				// string is given? use as name of cookie,
+				// whose value is session id
+				} else {
+					// we patched Listener.prototype._onConnection to always
+					// have access to headers, particularly to Cookie:
+					sid = this.listener.req.headers.cookie;
+					sid = sid && sid.match(new RegExp('(?:^|;) *' +
+						options.generateSessionId + '=([^;]*)'));
+					sid = sid && sid[1];
+				}
+				this.sessionId = sid || nonce() + nonce() + nonce();
+				console.log('SESSION', this.sessionId);
+				return this;
+			};
+		}
+		// start websocket listener
 		var ws = IO.listen(server, options);
 
+		// on client connection...
 		ws.on('connection', function(socket) {
 			// upgrade socket to context
 			createContext.call(socket);

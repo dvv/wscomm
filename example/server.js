@@ -117,17 +117,14 @@ function middleware(req, res) {
 // websocket context
 //
 var wscontext = {
+	//generateSessionId: 'sid',
+	generateSessionId: function() {
+		return '123';
+	},
 	ready: function() {
-		// `this` is the socket; here is the only place to memo it
+		// `this` is the socket; here is the only place to memo it.
 		// setup initial context
-		// N.B. to authorize the client we reuse 'sid' cookie
-		// from the HTTP request. This allows for any kind of external
-		// authentication. With patched Listener.prototype._onConnection
-		// we always have access to headers
-		var sid = this.listener.req.headers.cookie;
-		sid = sid && sid.match(new RegExp('(?:^|;) *' + 'sid' + '=([^;]*)')); sid = sid && sid[1] || '';
-		console.log('SESSION', sid);
-		this.context.extend(getContext.call(this, sid));
+		this.context.extend(getContext.call(this, this.sessionId));
 	}
 };
 
@@ -144,11 +141,23 @@ if (true) {
 	http1.listen(3000);
 	// websocket
 	var ws1 = Ws.listen(http1, _.extend({}, wscontext, {
-		disconnect: function() {
+		onDisconnect: function() {
 			// TODO: try to backup the context
 			var s;
-			db1.set(this.sessionId, s = JSON.stringify(this.context));
+			db1.set('session:' + this.sessionId, s = this.encode(this.context));
 			console.log('DISCONNECTED1!', this.sessionId, s);
+		},
+		ready: function() {
+			var self = this;
+			var caps = getContext.call(this, this.sessionId);
+			db1.get('session:' + this.sessionId, function(err, result) {
+				console.log('FETCHED', self.sessionId, arguments);
+				if (result) {
+					var session = self.decode(result);
+					_.defaults(caps, session);
+				}
+				self.context.extend(caps);
+			});
 		}
 	}));
 	repl.context.ws1 = ws1;
