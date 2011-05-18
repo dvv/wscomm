@@ -42,6 +42,7 @@ continue;
 // new value is undefined or null?
 if (v == null) {
 // remove the property
+//console.log('RESET', dst, prop);
 delete dst[prop];
 } else {
 dst[prop] = v;
@@ -62,4 +63,10 @@ extend(dst, {Foo:{a:{a:'deep'}}});
 extend(dst, {Foo:{a:{b:9}}});
 extend(dst, {Foo:{}});
 assert.deepEqual(dst, {Foo:{a:{a:'deep',b:9},b:3,c:[4,null,5]}})
+extend(dst, {Foo:{b:undefined}});
+assert.deepEqual(dst, {Foo:{a:{a:'deep',b:9},c:[4,null,5]}})
+var x = dst.Foo.a;
+x.a = null;
+extend(dst, {Foo: {a:x}});
+assert.deepEqual(dst, {Foo:{a:{b:9},c:[4,null,5]}})
 console.log(dst);

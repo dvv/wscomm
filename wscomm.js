@@ -1,5 +1,3 @@
-'use strict';
-
 /*
  *
  * Copyright(c) 2011 Vladimir Dronnikov <dronnikov@gmail.com>
@@ -13,6 +11,7 @@
 //
 
 (function(_, undefined) {
+'use strict';
 
 //
 // in browser?
@@ -43,6 +42,13 @@ function has(obj, prop) {
 }
 
 //
+// determine loosely if obj is callable
+//
+function callable(obj) {
+	return typeof obj === 'function'; // N.B. RegExp in V8 fits also...
+}
+
+//
 // safely get a deep property of `obj` descending using elements
 // in `path`
 //
@@ -67,7 +73,7 @@ function drill(obj, path) {
 //
 function caller(path) {
 	var fn = drill(this, path);
-	_.isFunction(fn) && fn.apply(this, slice.call(arguments, 1));
+	callable(fn) && fn.apply(this, slice.call(arguments, 1));
 }
 
 //
@@ -76,7 +82,15 @@ function caller(path) {
 function invoke(list, filter, path) {
 	var args = slice.call(arguments, 2);
 	// filter the list if the filtering function is given
-	if (_.isFunction(filter)) list = _.filter(list, filter);
+	if (callable(filter)) {
+		list = _.filter(list, filter);
+	// if `filter` is array, use it as list
+	} else if (_.isArray(filter)) {
+		list = filter;
+	// else make list from `filter`
+	} else if (Object(filter) === filter) {
+		list = [filter];
+	}
 	// return the filtered list unless arguments to make call are given
 	if (!args.length) return list;
 	_.each(list, function(item) {
@@ -98,36 +112,31 @@ function createContext() {
 
 	// constants
 	var THIS_IS_FUNC = '~-=(){}=-~';
-	var THIS_IS_FUNC_LEN = THIS_IS_FUNC.length;
 
 	// shared context prototype
 	function Context() {};
 	// N.B. anything put in prototype won't be shared with remote end.
-	// extend shared context
-	Context.prototype.extend = function(changes, reset) {
+	// extend shared context with `changes` and send to the remote side
+	Context.prototype.sync = function(changes, reset) {
 		socket.update(changes, reset, true);
 	};
-	// called at client-side when server-side sets the context
-	Context.prototype.ready = options.ready;
-	// called before change occurs in to property.
-	// signature is function(prop, oldvalue, newvalue).
-	// return something other than undefined to inhibit assigning to
-	// the `prop`
-	Context.prototype.change = options.change;
+	// TODO: rethink
+	/*
 	// called before updating the shared context.
 	// return value other than undefined means validation is rejected
 	Context.prototype.validate = function(changes, reset) {
-		if (_.isFunction(changes)) {
+		if (callable(changes)) {
 			this.constructor.prototype.validate = changes;
 			return;
 		}
 		return undefined;
 	};
+	*/
 	// invoke a remote function by `path`
 	Context.prototype.rpc = function(path, callback /*, args...*/) {
 		var args = slice.call(arguments, 1);
 		// register callback, if any
-		if (_.isFunction(callback)) {
+		if (callable(callback)) {
 			// consume `callback` argument
 			args.shift();
 			// N.B. callbacks are deleted once they are fired.
@@ -136,7 +145,7 @@ function createContext() {
 			var id = nonce();
 			socket.cbs[id] = callback;
 		}
-		// RPC
+		// do the call
 		var msg = {cmd: 'call', id: id, method: path, params: args};
 		socket.send(msg);
 	};
@@ -160,11 +169,13 @@ function createContext() {
 	this.encode = function(obj, onlyVariables) {
 		var self = this;
 		function replacer(k, v) {
-			// N.B. live remote functions no pasaran!
-			if (_.isFunction(v) && !v.live) {
+			// live remote functions no pasaran!
+			if (callable(v) && !v.live && !onlyVariables) {
 				v = THIS_IS_FUNC;
+			// raw remote functions no pasaran!
+			} else if (v === THIS_IS_FUNC) {
+				v = undefined;
 			}
-			if (onlyVariables && v === THIS_IS_FUNC) v = undefined;
 			return v;
 		}
 		// should circular dependency occur, send nothing.
@@ -173,12 +184,12 @@ function createContext() {
 		// FIXME: until socket.io has tunable stringifier
 		// we must workaround it
 		try {
-			var s = JSON.stringify(obj, replacer);
+			var str = JSON.stringify(obj, replacer);
 		} catch(err) {
 			// ...silently fail
-			s = '';
+			str = '';
 		}
-		return s;
+		return str;
 	}
 
 	//
@@ -186,9 +197,13 @@ function createContext() {
 	// replace THIS_IS_FUNC signatures with functions
 	//
 	this.decode = function(str) {
-		var obj = JSON.parse(str);
-		if (options.liveFunctions) {
-			this.parseWithFunctions(obj);
+		// JSON.parse can throw...
+		try {
+			var obj = JSON.parse(str);
+			if (options.liveFunctions) {
+				this.parseWithFunctions(obj);
+			}
+		} catch(err) {
 		}
 		return obj;
 	};
@@ -234,7 +249,7 @@ function createContext() {
 			// value is not ordinal?
 			if (Object(v) === v) {
 				// value is array?
-				if (Array.isArray(v)) {
+				if (_.isArray(v)) {
 					// put its copy, not reference
 					dst[prop] = v.slice();
 					continue;
@@ -251,11 +266,14 @@ function createContext() {
 				}
 			}
 			// value is ordinal.
-			// first validate the supposed change
-			if (_.isFunction(socket.context.change) &&
-				// if `change` function returns something then inhibit
+			// first validate the supposed change by `options.onChange`
+			// callback of signature function(prop, oldvalue, newvalue).
+			// skip the change if it returns something but undefined
+			// TODO: deep equality
+			if (v !== d && callable(options.onChange) &&
+				// if `change` function returns something then skip
 				// the property assignment
-				socket.context.change(prop, v, d) !== undefined)
+				options.onChange(prop, v, d, dst) !== undefined)
 				continue;
 			// new value is undefined or null?
 			if (v == null) {
@@ -289,20 +307,33 @@ function createContext() {
 			// critical methods live in prototype!
 			for (var i in context) delete context[i];
 		}
-		extend(context, changes);
+		// we support multiple change steps
+		if (_.isArray(changes)) {
+			_.each(changes, function(x) {
+				extend(context, x);
+			});
+		} else {
+			extend(context, changes);
+		}
+		// persist changes
+		if (callable(options.save)) {
+			options.save.call(this);
+		}
 		// notify remote end that context has changed
 		if (send) {
-			// persist changes
-			if (_.isFunction(options.save)) {
-				options.save.call(this);
-			}
 			// send serialized context to the remote end
 			var s = this.encode({
 				cmd: 'context',
-				// N.B. no changes means to force sending the whole context.
-				// this allows to group changes in "package" and send them
-				// in one go
-				params: reset || !changes ? [context, true] : [changes]
+				// `reset` controls whether to send the whole context replacing
+				// the current one
+				params: reset ?
+					[context, true] :
+					// N.B. no changes means to force sending the whole context.
+					// this allows to group changes in "package" and send them
+					// in one go
+					!changes ?
+						[context] :
+						[changes]
 			});
 			this.send('~j~' + s);
 		}
@@ -346,7 +377,7 @@ function createContext() {
 				fn = this.context.rpc;
 			}
 			// do call the method, if it's a function indeed
-			if (_.isFunction(fn)) {
+			if (callable(fn)) {
 				fn.apply(this.context, args);
 			}
 		// uniquely identified reply from the remote side arrived.
@@ -366,8 +397,8 @@ function createContext() {
 			this.update.apply(this, message.params);
 			// fire 'ready' callback
 			if (CLIENT_SIDE) {
-				_.isFunction(this.context.ready) &&
-					this.context.ready.call(this, message.params[1]);
+				callable(options.onContext) &&
+					options.onContext.call(this, message.params[1]);
 			// persist the context
 			} else {
 				// TODO: !
@@ -380,13 +411,13 @@ function createContext() {
 	//
 	this.on('disconnect', function() {
 		// execute `options.onDisconnect` callback
-		if (_.isFunction(options.onDisconnect)) {
+		if (callable(options.onDisconnect)) {
 			options.onDisconnect.call(this);
 		}
 	});
 	this.on('reconnect', function() {
 		// execute `options.onReconnect` callback
-		if (_.isFunction(options.onReconnect)) {
+		if (callable(options.onReconnect)) {
 			options.onReconnect.call(this);
 		}
 	});
@@ -412,10 +443,15 @@ if (CLIENT_SIDE) {
 		// set default options
 		if (!options) options = {};
 		_.defaults(options, {
-			port: location.port,
+			// N.B. bundlers may use RegExp("location['p'+'ort']") to
+			// supply the port inplace
+			port: location['p'+'ort'],
 			secure: location.protocol === 'https:',
 			transports: ['websocket', 'xhr-polling'],
-			rememberTransport: false
+			rememberTransport: false,
+			// called at client-side when server-side sets the context.
+			// should be overridden to provide client-side portion of context
+			ready: function() {}
 		});
 		// create socket
 		var socket = new io.Socket(host, options);
@@ -423,7 +459,7 @@ if (CLIENT_SIDE) {
 		var ctx = createContext.call(socket);
 		// make connection
 		socket.connect();
-		// return context
+		// return the context
 		return ctx;
 	};
 
@@ -458,13 +494,18 @@ if (CLIENT_SIDE) {
 				this.req = req;
 				onConnection.apply(this, arguments);
 			};
-		// patch client session id generator
+		// patch session id generator
+		var Client = require('socket.io/lib/socket.io/client');
+		Client.prototype._generateSessionId = function() {
+			return nonce() + nonce() + nonce();
+		};
+		/*
 		if (options.generateSessionId) {
 			var Client = require('socket.io/lib/socket.io/client');
 			Client.prototype._generateSessionId = function() {
 				var sid;
 				// function is given? use return value
-				if (_.isFunction(options.generateSessionId)) {
+				if (callable(options.generateSessionId)) {
 					sid = options.generateSessionId.call(this);
 				// string is given? use as name of cookie,
 				// whose value is session id
@@ -476,11 +517,15 @@ if (CLIENT_SIDE) {
 						options.generateSessionId + '=([^;]*)'));
 					sid = sid && sid[1];
 				}
+				//
+				// MAJOR FIXME: how to distinguish multiple client on the same
+				// page? They all have the same cookie... :)
+				//
 				this.sessionId = sid || nonce() + nonce() + nonce();
 				console.log('SESSION', this.sessionId);
 				return this;
 			};
-		}
+		}*/
 		// start websocket listener
 		var ws = IO.listen(server, options);
 
@@ -489,8 +534,8 @@ if (CLIENT_SIDE) {
 			// upgrade socket to context
 			createContext.call(socket);
 			// initialize the context
-			_.isFunction(socket.listener.options.ready) &&
-				socket.listener.options.ready.call(socket, true);
+			callable(socket.listener.options.onContext) &&
+				socket.listener.options.onContext.call(socket);
 			// FIXME: this is _really_ too much for single server
 			// and too few for multi-server.
 			// kinda safer broadcaster is needed
@@ -503,7 +548,7 @@ if (CLIENT_SIDE) {
 		Object.defineProperties(ws, {
 			everyone: {
 				get: function() {
-					return _.toArray(this.clients);
+					return Array.toArray(this.clients);
 				}
 			},
 			contexts: {
