@@ -1,0 +1,22 @@
+--- websocket.js.orig	2011-05-20 11:50:10.000000000 +0400
++++ websocket.js	2011-05-20 11:59:19.000000000 +0400
+@@ -11,6 +11,10 @@
+ 
+ util.inherits(WebSocket, Client);
+ 
++WebSocket.prototype._isSecure = function(){
++  return this.request.socket.encrypted;
++};
++
+ WebSocket.prototype._onConnect = function(req, socket){
+   var self = this
+     , headers = [];
+@@ -33,7 +37,7 @@
+   }
+   
+   var origin = this.request.headers.origin,
+-      location = (this.request.socket.encrypted ? 'wss' : 'ws')
++      location = (this._isSecure() ? 'wss' : 'ws')
+                + '://' + this.request.headers.host + this.request.url;
+   
+   this.waitingForNonce = false;

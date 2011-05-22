@@ -11,11 +11,10 @@
 		window.dump = function() {console.log('DUMP', arguments);};
 		// load scripts
 		$.script([
-			//'/socket.io/socket.io.js',
 			'wscomm.js'
 		], function socketReady() {
 			// scripts loaded
-			console.log('APPLOADED');//, _);
+			console.log('APPLOADED');
 			var caps = {
 				ping: function(cb, text) {
 					$(this.lid).append('<li>' + (text || 'Server pings you, dude!') + '</li>');
@@ -131,6 +130,9 @@ $.domReady(function() {
 	</script>
 </head>
 <body>
+<div>
+<a href='/auth'>Signin</a>
+</div>
 <div>
 Your message as dvv: <input data-id="1" type="text"/><button class="send" disabled="disabled">Send</button><button class="join" disabled="disabled">Join</button><button class="leave" disabled="disabled">Leave</button><button class="signin" disabled="disabled">Sign In</button><br/>
 <ol id="l1"></ol>
