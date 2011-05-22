@@ -1,0 +1,83 @@
+<!doctype html>
+<head>
+	<meta charset="utf-8">
+	<script type="text/javascript" src="underscore.js"></script>
+	<script type="text/javascript" src="backbone.js"></script>
+	<script type="text/javascript" src="capsule.js"></script>
+	<script type="text/javascript" src="socket.io/socket.io.js"></script>
+	<script type="text/javascript">
+		// augment IE. for how long, mf?!
+		if (typeof console === 'undefined') console = {log: alert};
+		window.dump = function() {console.log('DUMP', arguments);};
+			console.log('APPLOADED');
+var AppModel = Capsule.Model.extend({
+	type: 'app',
+	initialize: function(spec) {
+		this.register();
+	}
+});
+var app = window.app = new AppModel();
+var view = window.view = {};
+			var comm1 = window.comm1 = new io.Socket(null, {
+				transports: ['websocket', 'xhr-polling'],
+				rememberTransport: false,
+				secure: location.protocol === 'https:'
+			});
+			comm1.on('connect', function() {
+				this.send({event: 'session'});
+				console.log('CONNECTED');
+			});
+			comm1.on('message', function(data) {
+				console.log('MESSAGE', data);
+
+///////////////////////////////////
+    var changedModel, template;
+
+    switch (data.event) {
+      case 'templates':
+        for (template in data.templates) {
+          ich.addTemplate(template, data.templates[template]);
+        }
+        break;
+      case 'initial':
+        //import app state
+        app.mport(data.app);
+
+        // init our root view
+        view = window.view = new AppView({
+          el: $('body'),
+          model: app
+        });
+
+        view.render();
+        break;
+      case 'change':
+        changedModel = Capsule.models[data.id];
+        if (changedModel) {
+          changedModel.set(data.data);
+        } else {
+          console.error('model not found for change event', data);
+        }
+        break;
+      case 'add':
+        Capsule.models[data.collection].add(data.data.attrs);
+        break;
+      case 'remove':
+        changedModel = Capsule.models[data.id];
+        if (changedModel && changedModel.collection) {
+          changedModel.collection.remove(changedModel);
+        }
+        break;
+    }
+///////////////////////////////////
+
+			});
+			comm1.connect();
+	</script>
+</head>
+<body>
+<div>
+<a href='/auth'>Signin</a>
+</div>
+</body>
+</html>
