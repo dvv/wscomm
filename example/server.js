@@ -213,63 +213,68 @@ function Node(httpStack, httpPort) {
 	this.http = connect.apply(null, httpStack);
 	this.http.listen(httpPort);
 
-	// WebSocket
+	// WebSocket shared context
 	this.ws = Ws.listen(this.http, {
-		save: function(callback) {
+	});
+	this.ws.on('connection', function(client) {
+		// get session
+		// N.B. we patched Listener.prototype._onConnection to always
+		// have access to headers, particularly to Cookie:
+		var sid = client.listener.req.headers.cookie;
+		sid = sid && sid.match(new RegExp('(?:^|;) *' +
+			sessionOptions.session_key + '=([^;]*)'));
+		sid = sid && sid[1];
+		// deserialize cookie manually to extract `user.id` key
+		if (sid) try {
+			client.session = Cookie.deserialize(
+				sessionOptions.secret, sessionOptions.timeout, sid);
+			// extract client id from the session
+			client.clientId = client.session.user.id;
+			console.log('REUSED', client.session, client.clientId);
+		} catch (err) {
+			console.log('FAILED TO PARSE SESSION', err.stack);
+		}
+		// setup initial context
+		// TODO: this should be new App(...), and be reused at client side!
+		var caps = getContext.call(node, client.clientId);
+		// honor session
+		node.db.get('session:' + client.clientId, function(err, result) {
+			if (result) {
+				var session = Ws.decode(result);
+				// honor saved context
+				client.updateContext(session, {save: false});
+			}
+			// honor caps
+			client.updateContext(caps, {save: false});
+			// honor sync
+			client.updateContext({
+				sync: function(next, changes) {
+					client.updateContext(changes, {send: true});
+					callable(next) && next();
+				}
+			}, {save: false});
+			// send the resulting context
+			//client.context.sync(ctx, true);
+			client.updateContext(null, {save: false, send: true, ready: true});
+			console.log('CONNECTED!', client.clientId, client.context);
+		});
+		// client wants to save its state
+		client.on('save', function(callback) {
 			// backup the context, pruning both local and remote functions
 			var s;
 			node.db.set(['session:' + this.clientId, s = Ws.encode(this.context, true)], callback);
 			console.log('SAVED!', s);
-		},
-		load: function(callback) {
-		},
-		// `obj[property]` being `oldValue` is changing to `value`
-		onChange: function(property, value, oldValue, obj) {
+		});
+		// client disconnected
+		client.on('disconnect', function() {
+			// TODO: should we emit 'save' here, just in case ;)
+			console.log('DISCONNECTED!', arguments);
+		});
+		// context `obj[property]` being `oldValue` is changing to `value`
+		client.on('change', function(property, value, oldValue, obj) {
 			console.log('CHANGE', arguments);
 			node.pub.publish('bcast', Ws.encode({cmd: 'change', property: property}));
-		},
-		onContext: function() {
-			// `this` is the socket; here is the only place to memo it.
-			var self = this;
-			// get session
-			// N.B. we patched Listener.prototype._onConnection to always
-			// have access to headers, particularly to Cookie:
-			var sid = this.listener.req.headers.cookie;
-			sid = sid && sid.match(new RegExp('(?:^|;) *' +
-				sessionOptions.session_key + '=([^;]*)'));
-			sid = sid && sid[1];
-			// deserialize cookie manually to extract `user.id` key
-			if (sid) try {
-				this.session = Cookie.deserialize(
-					sessionOptions.secret, sessionOptions.timeout, sid);
-				// extract client id from the session
-				this.clientId = this.session.user.id;
-				console.log('REUSED', this.session, this.clientId);
-			} catch (err) {
-				console.log('FAILED TO PARSE SESSION', err.stack);
-			}
-			// setup initial context
-			var caps = getContext.call(node, this.clientId);
-			var ctx = [];
-			// honor session
-			//if (this.session) ctx.push(this.session);
-			node.db.get('session:' + this.clientId, function(err, result) {
-				if (result) {
-					var session = Ws.decode(result);
-					// honor saved context
-					ctx.push(session);
-				}
-				// honor caps
-				ctx.push(caps);
-				// send the resulting context
-				self.context.sync(ctx, true);
-				console.log('CONNECTED!', self.clientId, self.context);
-			});
-		},
-		onDisconnect: function() {
-			// TODO: should we `this.save()` here, just in case ;)
-			console.log('DISCONNECTED!', this.clientId);
-		}
+		});
 	});
 
 	// persistence
@@ -297,7 +302,7 @@ Node.prototype.onBroadcast = function(pattern, message) {
 	if (!message) return;
 	message = Ws.decode(message);
 	if (message.cmd === 'change') {
-		console.log('CHANGE ARRIVED', this.ws, message);
+		console.log('CHANGE ARRIVED', message);
 	} else if (message.cmd === 'invoke') {
 		// FIXME: null means all clients. howto use filters?
 		var args = [this.ws.clients, null];

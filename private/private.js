@@ -202,8 +202,9 @@ var Private = Backbone.Model.extend({
 					console.log('NO SESSION', err.stack);
 				}
 
-				var app = client.app = new Model.AppModel({
+				app = client.app = new Model.AppModel({
 				});
+				app.socket = client;
 
 				// send initial context
 				client.send({

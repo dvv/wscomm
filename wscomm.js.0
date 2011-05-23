@@ -93,7 +93,7 @@ function invoke(list, filter, path) {
 	if (!args.length) return list;
 	// for each item in list perform RPC call
 	_.each(list, function(item) {
-		SocketProto.rpc.apply(item, args);
+		rpc.apply(item, args);
 	});
 }
 
@@ -108,8 +108,8 @@ var THIS_IS_FUNC = '~-=(){}=-~';
 //
 function encode(obj, onlyVariables) {
 	function replacer(k, v) {
-		// veto functions no pasaran!
-		if (callable(v) && !v.veto && !onlyVariables) {
+		// live remote functions no pasaran!
+		if (callable(v) && !v.live && !onlyVariables) {
 			v = THIS_IS_FUNC;
 		// raw remote functions no pasaran!
 		} else if (v === THIS_IS_FUNC) {
@@ -149,88 +149,9 @@ function decode(str, context) {
 }
 
 //
-// in browser?
-//
-var CLIENT_SIDE = typeof window !== 'undefined';
-
-//
-// upgrade socket prototype to support functions calls over the wire
-// and state exchange between the two sides
-//
-
-var SocketProto = CLIENT_SIDE ?
-	io.Socket.prototype :
-	require('socket.io/lib/socket.io/client').prototype;
-
-//
-// update `this.context` with `changes` resetting it first if `reset`
-// is truthy. if `socket` is given send the changes to it
-//
-// TODO: this could be overridden to support custom context prototypes.
-// Think of Backbone
-//
-SocketProto.updateContext = function(changes, options) {
-	if (!options) options = {};
-	var context = this.context;
-	// N.B. do not overwrite `context`, only mangle! That's why
-	// this way of purging old context
-	if (options.reset) {
-		// we don't remove (and change as well) vetoed properties
-		/*for (var i in context) if (has(context, i)) {
-			if (!context[i] || !context[i].veto) delete context[i];
-		}*/
-		for (var i in context) delete context[i];
-	}
-	// apply changes
-	// FIXME: should be context.extend(changes)!
-	extend.call(this, context, changes);
-	//context.extend(changes, options);
-	// persist changes
-	options.save !== false && this.emit('save');
-	// notify remote end that context has changed
-	if (options.send) {
-		// send serialized context to the remote end
-		var s = encode({
-			cmd: 'context',
-			// `reset` controls whether to send the whole context replacing
-			// the current one
-			// N.B. no changes means to force sending the whole context.
-			// this allows to group changes in "package" and send them
-			// in one go
-			params: [changes && !options.reset ? changes : context, options]
-		});
-		// N.B. we have "insight" here of how socket.io serializes JSON ;)
-		// FIXME: this should be fixed
-		this.send('~j~' + s);
-	}
-};
-
-//
-// invoke a remote function by `path`
-//
-SocketProto.cbs = {}; // callbacks
-SocketProto.rpc = function(path, callback /*, args...*/) {
-	var args = slice.call(arguments, 1);
-	// register callback, if any
-	if (callable(callback)) {
-		// consume `callback` argument
-		args.shift();
-		// N.B. callbacks are deleted once they are fired.
-		// unless a callback is fired, it holds the memory.
-		// we should introduce expiration for callbacks
-		var id = nonce();
-		this.cbs[id] = callback;
-	}
-	// do the call
-	var msg = {cmd: 'call', id: id, method: path, params: args};
-	this.send(msg);
-};
-
-//
 // revive functions from THIS_IS_FUNC signatures
 //
-SocketProto.reviveFunctions = function(obj) {
-	var socket = this;
+function reviveFunctions(obj, socket) {
 	function revive(obj, root) {
 		// iterate over objects only
 		if (obj !== Object(obj)) return;
@@ -240,9 +161,9 @@ SocketProto.reviveFunctions = function(obj) {
 			// "function" signature is met?
 			if (obj[prop] === THIS_IS_FUNC) {
 				// bind RPC caller
-				obj[prop] = _.bind(SocketProto.rpc, socket, path);
-				// veto passing this function to remote side
-				obj[prop].veto = true;
+				obj[prop] = _.bind(rpc, socket, path);
+				// mark the bound function as live remote function
+				obj[prop].live = true;
 			// vanilla object
 			} else {
 				// recurse
@@ -251,57 +172,7 @@ SocketProto.reviveFunctions = function(obj) {
 		}
 	}
 	revive(obj, []);
-};
-
-//
-// send the reply to remote side. it will result in calling the
-// callback associated with this message `id`, at the remote side
-//
-SocketProto.reply = function(id /*, args... */) {
-	// nothing to do unless `id` is set
-	if (!id) return;
-	var args = slice.call(arguments, 1);
-	this.send({cmd: 'reply', id: id, params: args});
-};
-
-//
-// socket message arrived
-//
-SocketProto.onMessage = function(message) {
-	if (!message) return;
-	console.log('MESSAGE', message);
-	var fn;
-	// remote side calls this side method
-	if (message.cmd === 'call' &&
-		(fn = drill(this.context, message.method))) {
-		// the signature of remotely callable method is
-		// function(callback[, arg1[, arg2[, ...]]]). so we always place
-		// a callback stub to fit the signature
-		var args = [_.bind(SocketProto.reply, this, message.id)];
-		// optional arguments come from message.params
-		message.params && push.apply(args, message.params);
-		// do call the method, if it's a function indeed
-		callable(fn) && fn.apply(this.context, args);
-	// uniquely identified reply from the remote side arrived.
-	// given reply id, lookup and call corresponding callback
-	} else if (message.cmd === 'reply' && message.id &&
-		(fn = this.cbs[message.id])) {
-		// remove the callback to please GC
-		delete this.cbs[message.id];
-		// callback
-		fn.apply(this.context, message.params);
-	// remote context has changed
-	} else if (message.cmd === 'context') {
-		var changes = message.params[0];
-		var options = message.params[1] || {};
-		// revive functions from THIS_IS_FUNC signatures
-		this.reviveFunctions(changes);
-		// update the context
-		this.updateContext(changes, options);
-		// remote context first initialized?
-		options.ready && this.emit('ready');
-	}
-};
+}
 
 //
 // deeply extend the `dst` with properties of `src`.
@@ -356,32 +227,219 @@ function extend(dst, src) {
 }
 
 //
-// create shared context using `this` socket as transport layer
-// `context` is template initial object
+// update the `context` with `changes` resetting it first if `reset`
+// is truthy. if `socket` is given send the changes to it
 //
-SocketProto.createContext = function(proto) {
+function update(context, changes, reset, socket) {
+	// N.B. do not overwrite `context`, only mangle! That's why
+	// this way of purging old context
+	if (reset) {
+		// N.B. we don't care of filtering own properties, because
+		// critical methods live in prototype!
+		for (var i in context) delete context[i];
+	}
+	// we support multiple change steps
+	if (_.isArray(changes)) {
+		_.each(changes, function(x) {
+			extend.call(socket, context, x);
+		});
+	} else {
+		extend.call(socket, context, changes);
+	}
+	// notify remote end that context has changed
+	if (socket) {
+		// send serialized context to the remote end
+		var s = encode({
+			cmd: 'context',
+			// `reset` controls whether to send the whole context replacing
+			// the current one
+			params: reset ?
+				[context, true] :
+				// N.B. no changes means to force sending the whole context.
+				// this allows to group changes in "package" and send them
+				// in one go
+				!changes ?
+					[context] :
+					[changes]
+		});
+		// N.B. we have "insight" here of how socket.io serializes JSON ;)
+		// FIXME: this should be fixed
+		socket.send('~j~' + s);
+	}
+}
+
+//
+// invoke a remote function by `path`
+//
+function rpc(path, callback /*, args...*/) {
+	var args = slice.call(arguments, 1);
+	// register callback, if any
+	if (callable(callback)) {
+		// consume `callback` argument
+		args.shift();
+		// N.B. callbacks are deleted once they are fired.
+		// unless a callback is fired, it holds the memory.
+		// we should introduce expiration for callbacks
+		var id = nonce();
+		this.cbs[id] = callback;
+	}
+	// do the call
+	var msg = {cmd: 'call', id: id, method: path, params: args};
+	this.send(msg);
+}
+
+//
+// send the reply to remote side. it will result in calling the
+// callback associated with this message `id`, at the remote side
+//
+function reply(id /*, args... */) {
+	// nothing to do unless `id` is set
+	if (!id) return;
+	var args = slice.call(arguments, 1);
+	this.send({cmd: 'reply', id: id, params: args});
+}
+
+//
+// socket message arrived
+//
+function onMessage(message) {
+	if (!message) return;
+	//console.log('MESSAGE', message);
+	// normalize options
+	var options = this.listener ? this.listener.options : this.options;
+	var fn;
+	// remote side calls this side method
+	if (message.cmd === 'call' &&
+		(fn = drill(this.context, message.method))) {
+		// the signature of remotely callable method is
+		// function(callback[, arg1[, arg2[, ...]]]). so we always place
+		// a callback stub to fit the signature
+		var args = [_.bind(reply, this, message.id)];
+		// optional arguments come from message.params
+		if (message.params) {
+			push.apply(args, message.params);
+		}
+		// non-revived remote functions is wrapped by rpc helper.
+		// FIXME: decision is welcome whether functions defined at remote
+		// side can be called by that remote side per se?!
+		// Talking to NowJS people revealed it's quite welcome
+		if (fn === THIS_IS_FUNC) {
+			args.unshift(message.method);
+			fn.apply(this, args);
+		// do call the method, if it's a function indeed
+		} else if (callable(fn)) {
+			fn.apply(this.context, args);
+		}
+	// uniquely identified reply from the remote side arrived.
+	// given reply id, lookup and call corresponding callback
+	} else if (message.cmd === 'reply' && message.id &&
+		(fn = this.cbs[message.id])) {
+		// remove the callback to please GC
+		delete this.cbs[message.id];
+		// callback
+		fn.apply(this.context, message.params);
+	// remote context has changed
+	} else if (message.cmd === 'context') {
+		// optionally make remote functions real live functions
+		if (options.liveFunctions) {
+			reviveFunctions(message.params[0], this);
+		}
+		update(this.context, message.params[0], message.params[1]);
+		// persist changes
+		if (callable(options.save)) {
+			options.save.call(this);
+		}
+		// fire 'ready' callback
+		if (CLIENT_SIDE) {
+			callable(options.onContext) &&
+				options.onContext.call(this, message.params[1]);
+		// persist the context
+		} else {
+			// TODO: !
+		}
+	}
+}
+
+//
+// in browser?
+//
+var CLIENT_SIDE = typeof window !== 'undefined';
+
+//
+// upgrade `this` socket to support functions calls over the wire
+// and state exchange between the two sides
+//
+function createContext() {
+
 	// cache
 	var socket = this;
+
+	// normalize options
+	var options = this.listener ? this.listener.options : this.options;
+
 	// shared context prototype
 	// N.B. anything put in prototype won't be shared with remote end.
 	function Context() {}
-	if (proto) {
-		Context.prototype = _.extend({}, proto);
+
+	// reuse socket events
+	Context.prototype.on = this.on;
+	Context.prototype.once = this.once;
+	Context.prototype.un = this.removeEventListener;
+	Context.prototype.emit = this.emit;
+
+	// extend shared context with `changes` and send to the remote side
+	Context.prototype.sync = function(changes, reset) {
+		update(this, changes, reset, socket);
+		// persist changes
+		if (callable(options.save)) {
+			options.save.call(socket);
+		}
+	};
+
+	// client-side only methods
+	if (CLIENT_SIDE) {
+		// softly disconnect to allow reconnection
+		// FIXME: do we need this?
+		Context.prototype.reconnect = function() {
+			socket.disconnect(true);
+		};
 	}
-	//Context.prototype.extend = _.bind(extend, context);
-	Context.prototype.on = _.bind(this.on, this);
-	//Context.prototype.once = _.bind(this.once, this);
+
 	// create shared context
 	this.context = new Context();
-	//this.context.extend = _.bind(extend, this, this.context);
-	/*this.context.on = _.bind(this.on, this);
-	this.context.on.veto = true;
-	this.context.once = _.bind(this.once, this);
-	this.context.once.veto = true;*/
+	// callbacks
+	this.cbs = {};
+
+	//
+	// message handler
+	//
+	this.on('message', onMessage);
+	//
+	// change handler
+	//
+	if (callable(options.onChange)) {
+		this.on('change', options.onChange);
+	}
+	//
+	// handle disconnect and reconnect
+	// TODO: consider exposing `this.on` for better event handling?
+	//
+	this.on('disconnect', function() {
+		// execute `options.onDisconnect` callback
+		if (callable(options.onDisconnect)) {
+			options.onDisconnect.call(this);
+		}
+	});
+	this.on('reconnect', function() {
+		// execute `options.onReconnect` callback
+		if (callable(options.onReconnect)) {
+			options.onReconnect.call(this);
+		}
+	});
 
 	// export the context
 	return this.context;
-};
+}
 
 //
 // setup websocket communication
@@ -406,16 +464,15 @@ if (CLIENT_SIDE) {
 			secure: location.protocol === 'https:',
 			transports: ['websocket', 'xhr-polling'],
 			rememberTransport: false,
-			// custom object to be used as shared context prototype
-			proto: null
+			// called at client-side when server-side sets the context.
+			// should be overridden to provide client-side portion of context
+			onContext: function() {}
 		});
 		// create socket
 		var socket = new io.Socket(host, options);
-		// attach message handlers
-		socket.on('message', socket.onMessage);
-		// create shared context
-		var ctx = socket.createContext(options.proto);
-		// make connection. upon connection, context will emit 'ready' event
+		// upgrade socket to context
+		var ctx = createContext.call(socket);
+		// make connection
 		socket.connect();
 		// return the context
 		return ctx;
@@ -443,7 +500,7 @@ if (CLIENT_SIDE) {
 			transports: ['websocket', 'xhr-polling']
 		});
 
-		//var IO = require('Socket.IO-node'); // upcoming 0.7.0
+		//var IO = require('Socket.IO-node');
 		var IO = require('socket.io');
 		var older = IO.version.substring(0,3) === '0.6';
 		// patch older socket.io
@@ -462,8 +519,7 @@ if (CLIENT_SIDE) {
 			// N.B. we always "mirror" security: https -> wss, http -> ws
 			return this.request.headers.origin.substring(0, 6) === 'https:';
 		};
-		// patch session id generator.
-		// useful to provide a stronger nonce, e.g.
+		// patch session id generator
 		if (options.generateSessionId) {
 			var Client = require('socket.io/lib/socket.io/client');
 			Client.prototype._generateSessionId = options.generateSessionId;
@@ -474,27 +530,24 @@ if (CLIENT_SIDE) {
 		var ws = IO.listen(server, options);
 
 		// on client connection...
-		(older ? ws : ws.sockets).on('connection', function(client) {
-			// initialize shared context
-			client.createContext();
-			// attach message handler
-			client.on('message', client.onMessage);
-			// the rest initialization is left for user  code
+		(older ? ws : ws.sockets).on('connection', function(socket) {
+			// upgrade socket to context
+			createContext.call(socket);
+			// initialize the context
+			callable(socket.listener.options.onContext) &&
+				socket.listener.options.onContext.call(socket);
 		});
 
-		ws.__defineGetter__('ctx', function() {return _.toArray(this.clients)[0].context;});
-
-		// return the listener
-		return older ? ws : ws.sockets;
+		return ws;
 	};
 
-	// expose interface
 	module.exports = {
 		listen: listen,
 		nonce: nonce,
 		invoke: invoke,
 		encode: encode,
-		decode: decode
+		decode: decode,
+		extend: extend
 	};
 
 }

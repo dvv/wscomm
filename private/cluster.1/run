@@ -1,0 +1,29 @@
+#!/bin/sh
+
+ROOT=$PWD
+
+cat >stunnel.conf << _EOF_
+cert = $PWD/../cert.pem
+key = $PWD/../key.pem
+;setuid = haproxy
+;setgid = haproxy
+
+pid = $PWD/stunnel.pid
+debug = 3
+output = $PWD/stunnel.log
+
+socket = l:TCP_NODELAY=1
+socket = r:TCP_NODELAY=1
+sendproxy = yes
+
+[https]
+accept = 0.0.0.0:4000
+connect = 127.0.0.1:3443
+TIMEOUTclose = 0
+_EOF_
+
+killall stunnel
+./stunnel stunnel.conf
+#pgrep stunnel
+#sudo killall haproxy
+#sudo ./haproxy -f haproxy.conf

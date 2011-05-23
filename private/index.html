@@ -11,14 +11,15 @@
 		if (typeof console === 'undefined') console = {log: alert};
 		window.dump = function() {console.log('DUMP', arguments);};
 			console.log('APPLOADED');
-var app = window.app = new AppModel();
-var view = window.view = {};
+var app = window.app = {};
+//var view = window.view = {};
 			var comm1 = window.comm1 = new io.Socket(null, {
 				transports: ['websocket', 'xhr-polling'],
 				rememberTransport: false,
 				secure: location.protocol === 'https:'
 			});
 			comm1.on('connect', function() {
+				app.socket = this;
 				this.send({event: 'session'});
 				console.log('CONNECTED');
 			});
@@ -35,16 +36,17 @@ var view = window.view = {};
         }
         break;
       case 'initial':
+app = new AppModel();
         //import app state
         app.mport(data.app);
 
         // init our root view
-        view = window.view = new AppView({
+        /*view = window.view = new AppView({
           el: $('body'),
           model: app
         });
 
-        view.render();
+        view.render();*/
         break;
       case 'change':
         changedModel = Capsule.models[data.id];

@@ -22,36 +22,34 @@
 			};
 			// establish websocket connection #1
 			window.comm1 = new WSComm(null, {
-				liveFunctions: true,
-				onContext: function(reset) {
-					// `this` is the socket. The only chance to keep it somewhere in closures
-					window.s1 = this;
-					// `this.context` is the context
-					// `reset` is whether to flush the current context
-					console.log('READY!', reset);
-					var context = this.context;
-					// not signed in?
-					if (!context.user || !context.user.id) return context.rpc('signin', '123-1');
-					// enable commands
-					$($('input[data-id]')[0]).parents('div',true).find('button').removeAttr('disabled');
-					// define local context
-					//context.extend(_.extend({}, caps, {name: 'dvv aka Vladimir', lid: '#l1'}));
-					_.extend(context, caps, {name: 'dvv aka Vladimir', lid: '#l1'});
-					context.sync();
-				},
-				onChange: function() {
+			});
+			// important to run this only once!
+			comm1.on('ready', function() {
+				// `this` is the socket. The only chance to keep it somewhere in closures
+				window.s1 = this;
+				// `this.context` is the context
+				// `reset` is whether to flush the current context
+				console.log('READY!', this);
+				var context = this.context;
+				// not signed in?
+				if (!context.user || !context.user.id) return context.signin('123-1');
+				// enable commands
+				$($('input[data-id]')[0]).parents('div',true).find('button').removeAttr('disabled');
+				// define local context
+				//context.extend(_.extend({}, caps, {name: 'dvv aka Vladimir', lid: '#l1'}));
+				_.extend(context, caps, {name: 'dvv aka Vladimir', lid: '#l1'});
+				context.sync(context);
+			});
+			comm1.on('change', function() {
 					console.log('CHANGE:', arguments);
-				},
-				onDisconnect: function() {
-					// `this` is the socket
-					console.log('DISCONNECT', this);
-				},
-				onReconnect: function() {
-					// `this` is the socket
-					//this.transport.base.host = 'localhost';
-					//this.transport.base.options.port = 3000;
-					console.log('RECONNECT', this);
-				}
+			});
+			comm1.on('disconnect', function() {
+				// `this` is the socket
+				console.log('DISCONNECT', this);
+			});
+			comm1.on('reconnect', function() {
+				// `this` is the socket
+				console.log('RECONNECT', this);
 			});
 // demonstrate multi connections work
 if (false) {
@@ -88,7 +86,7 @@ $.domReady(function() {
 				var input = $(this).previous();
 				var id = input.attr('data-id');
 				var text = input.val();
-				window['comm'+id].rpc('post', function() {
+				window['comm'+id].post(function() {
 					console.log('POSTED!', arguments);
 					input.val('');
 				}, text);
@@ -98,7 +96,7 @@ $.domReady(function() {
 				var input = $(this).previous().previous();
 				var id = input.attr('data-id');
 				var text = input.val();
-				window['comm'+id].rpc('join', function(groups) {
+				window['comm'+id].join(function(groups) {
 					console.log('JOINED!', arguments, this);
 					//this.groups = groups;
 					input.val('');
@@ -109,7 +107,7 @@ $.domReady(function() {
 				var input = $(this).previous().previous().previous();
 				var id = input.attr('data-id');
 				var text = input.val();
-				window['comm'+id].rpc('leave', function(groups) {
+				window['comm'+id].leave(function(groups) {
 					console.log('LEFT!', arguments);
 					//this.groups = groups;
 					input.val('');
@@ -120,7 +118,7 @@ $.domReady(function() {
 				var input = $(this).previous().previous().previous().previous();
 				var id = input.attr('data-id');
 				var text = input.val();
-				window['comm'+id].rpc('signin', function() {
+				window['comm'+id].signin(function() {
 					console.log('SIGNED!', arguments);
 					input.val('');
 				}, text);
