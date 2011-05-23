@@ -4,18 +4,13 @@
 	<script type="text/javascript" src="underscore.js"></script>
 	<script type="text/javascript" src="backbone.js"></script>
 	<script type="text/javascript" src="capsule.js"></script>
+	<script type="text/javascript" src="model.js"></script>
 	<script type="text/javascript" src="socket.io/socket.io.js"></script>
 	<script type="text/javascript">
 		// augment IE. for how long, mf?!
 		if (typeof console === 'undefined') console = {log: alert};
 		window.dump = function() {console.log('DUMP', arguments);};
 			console.log('APPLOADED');
-var AppModel = Capsule.Model.extend({
-	type: 'app',
-	initialize: function(spec) {
-		this.register();
-	}
-});
 var app = window.app = new AppModel();
 var view = window.view = {};
 			var comm1 = window.comm1 = new io.Socket(null, {

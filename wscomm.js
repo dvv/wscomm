@@ -182,7 +182,7 @@ function reviveFunctions(obj, context) {
 // `dst` property.
 // N.B. arrays are cloned
 //
-function extend(dst, src, onChange) {
+function extend(dst, src) {
 	if (!src) return dst;
 	for (var prop in src) if (has(src, prop)) {
 		var v = src[prop];
@@ -201,7 +201,7 @@ function extend(dst, src, onChange) {
 				// destination has such property and it's not ordinal?
 				if (Object(d) === d) {
 					// recurse to merge
-					extend(d, v, onChange);
+					extend(d, v);
 					continue;
 				}
 			}
@@ -211,11 +211,12 @@ function extend(dst, src, onChange) {
 		// of signature function(prop, oldvalue, newvalue).
 		// skip the change if it returns something but undefined
 		// TODO: deeper equality
-		if (v !== d && callable(onChange) &&
+		/*if (v !== d && callable(onChange) &&
 			// if `change` function returns something then skip
 			// the property assignment
 			onChange(prop, v, d, dst) !== undefined)
-			continue;
+			continue;*/
+		if (v !== d) this.emit('change', [prop, v, d, dst]);
 		// new value is undefined or null?
 		if (v == null) {
 			// remove the property
@@ -240,13 +241,12 @@ function update(context, changes, reset, socket) {
 		for (var i in context) delete context[i];
 	}
 	// we support multiple change steps
-	// FIXME: have no access to `options.onChange`
 	if (_.isArray(changes)) {
 		_.each(changes, function(x) {
-			extend(context, x);//, options.onChange);
+			extend(context, x);
 		});
 	} else {
-		extend(context, changes);//, options.onChange);
+		extend(context, changes);
 	}
 	// notify remote end that context has changed
 	if (socket) {
@@ -364,6 +364,12 @@ function createContext() {
 	// N.B. anything put in prototype won't be shared with remote end.
 	function Context() {}
 
+	// reuse socket events
+	Context.prototype.on = this.prototype.on;
+	Context.prototype.once = this.prototype.once;
+	Context.prototype.un = this.prototype.removeEventListener;
+	Context.prototype.emit = this.prototype.emit;
+
 	// extend shared context with `changes` and send to the remote side
 	Context.prototype.sync = function(changes, reset) {
 		update(this, changes, reset, socket);
@@ -409,6 +415,12 @@ function createContext() {
 	// message handler
 	//
 	this.on('message', onMessage);
+	//
+	// change handler
+	//
+	if (callable(options.onChange)) {
+		this.on('change', options.onChange);
+	}
 	//
 	// handle disconnect and reconnect
 	// TODO: consider exposing `this.on` for better event handling?

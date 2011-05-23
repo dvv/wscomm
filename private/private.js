@@ -106,14 +106,7 @@ function invoke(list, filter, path) {
 	});
 }
 
-var AppModel = Capsule.Model.extend({
-	type: 'app',
-	initialize: function(spec) {
-		this.register();
-		//this.addChildCollection('members', exports.Members);
-		//this.addChildModel('activityLog', exports.ActivityLogPage);
-	}
-});
+var Model = require('./model');
 
 /**
  * WebSocket server prototype
@@ -147,6 +140,12 @@ var Private = Backbone.Model.extend({
 
 		// new client connection
 		this.ws.on('connection', _.bind(this.onConnection, this));
+		this.ws.__defineGetter__('ws', function() {
+			return _.toArray(this.clients);
+		});
+		this.ws.__defineGetter__('app', function() {
+			return this.ws[0].app;
+		});
 
 		// persistence and broadcasting
 		this.db = this.pub = Redis.createClient();
@@ -178,6 +177,8 @@ var Private = Backbone.Model.extend({
 		client.on('message', function(message) {
 			var model, collection;
 
+			console.log('MESSAGE', message);
+
 			switch (message.event) {
 
 			case 'session':
@@ -201,7 +202,7 @@ var Private = Backbone.Model.extend({
 					console.log('NO SESSION', err.stack);
 				}
 
-				var app = new AppModel({
+				var app = client.app = new Model.AppModel({
 				});
 
 				// send initial context

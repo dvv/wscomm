@@ -7,9 +7,12 @@ var Server = require('./server');
  * HTTP server
  */
 
-var node1 = Server().http.listen(3001);
-var node2 = Server().http.listen(3002);
-var node3 = Server().http.listen(3003);
+var node1 = Server();
+node1.http.listen(3001);
+var node2 = Server();
+node2.http.listen(3002);
+var node3 = Server();
+node3.http.listen(3003);
 
 /** REPL for tests.
  * N.B. fails to work under nodester.com!
