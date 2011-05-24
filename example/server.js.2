@@ -30,11 +30,12 @@ function getContext(sid) {
 
 	// anonymous user capability
 	var caps = {
-		signin: function(sid) {
+		signin: function(next, sid) {
 			var self = this;
 			function register(context) {
 				// reset the context
 				self.sync(context, true);
+				callable(next) && next();
 			}
 			// context getter is a function?
 			if (callable(getContext)) {
@@ -64,20 +65,19 @@ function getContext(sid) {
 			id: sid
 		},
 		Foo: {
-			get: function(index) {
+			get: function(next, index) {
 				console.log('Foo.get', arguments);
-				this.sync({result: 'hehe', error: null});
+				callable(next) && next({result: 'resulting'});
 			},
 			Bar: {
-				deep: function(index) {
+				deep: function(next, index) {
 					console.log('Foo.Bar.deep', arguments);
-					this.sync({result: null, error: 'olala'});
+					callable(next) && next({error: 'erroring'});
 				}
 			}
 		},
-		post: function(msg) {
-			console.log('POST', msg);
-			var groups = this.groups || [];
+		post: function(next, msg) {
+			var groups = _.keys(this.groups || {});
 			/*var r = node.invoke(function(client) {
 				//console.log('POSTCLIENT', client.context);
 				if (!client.context.groups) return false;
@@ -86,19 +86,25 @@ function getContext(sid) {
 			}, 'ping', this.name + ' ['+groups.join()+']' + ' says ' + msg);*/
 			var r = node.invoke('ping', this.name + ' ['+groups.join()+']' + ' says ' + msg);
 			//console.log('Post', r, arguments);
+			callable(next) && next();
 		},
-		groups: [],
-		join: function(group) {
+		groups: {},
+		join: function(next, group) {
 			var groups = this.groups;
 			// N.B. here might be the auth logic
-			if (!~_.indexOf(groups, group)) {
-				groups.push(group);
-				this.sync({groups: groups});
-			}
+			groups[group] = {};
+			this.sync(next, {groups: groups});
 		},
-		leave: function(group) {
-			var groups = _.without(this.groups, group);
-			this.sync({groups: groups});
+		leave: function(next, group) {
+			var groups = this.groups;
+			_.each(Array.prototype.slice.call(arguments, 1), function(g) {
+				delete groups[g];
+			}, this);
+			// N.B. removing a hash key from shared context is done by
+			// resetting the whole key, and then extending it.
+			// this allows for keeping interface clean
+			this.sync(null, {groups: null});
+			this.sync(next, {groups: groups});
 		}
 	});
 
@@ -241,10 +247,11 @@ function Node(httpStack, httpPort) {
 			client.updateContext(caps, {save: false, silent: true});
 			// honor sync
 			client.updateContext({
-				sync: function(changes) {
+				sync: function(next, changes) {
 					// here should go validation
 console.log('SYNC', arguments);
 					client.updateContext(changes, {send: true});
+					callable(next) && next();
 				}
 			}, {save: false, silent: true});
 			// send the resulting context
@@ -300,7 +307,9 @@ Node.prototype.onBroadcast = function(pattern, message) {
 		console.log('CHANGE ARRIVED', message);
 	} else if (message.cmd === 'invoke') {
 		// FIXME: null means all clients. howto use filters?
-		this.ws.invoke.apply(this.ws, [null].concat(message.args));
+		var args = [this.ws.clients, null];
+		push.apply(args, message.args);
+		Ws.invoke.apply(this.ws, args);
 	}
 };
 
@@ -313,9 +322,8 @@ var node1 = new Node(stack, 3001);
 var node2 = new Node(stack, 3002);
 var node3 = new Node(stack, 3003);
 
-/**
- * REPL for tests.
- * N.B. REPL fails to work under nodester.com!
+/** REPL for tests.
+ * N.B. fails to work under nodester.com!
  */
 
 var repl = require('repl').start('node> ');

@@ -37,6 +37,7 @@ var app = window.app = {};
         break;
       case 'initial':
 app = new AppModel();
+app.socket = this;
         //import app state
         app.mport(data.app);
 

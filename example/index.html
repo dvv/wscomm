@@ -16,7 +16,7 @@
 			// scripts loaded
 			console.log('APPLOADED');
 			var caps = {
-				ping: function(cb, text) {
+				ping: function(text) {
 					$(this.lid).append('<li>' + (text || 'Server pings you, dude!') + '</li>');
 				}
 			};
@@ -36,12 +36,19 @@
 				// enable commands
 				$($('input[data-id]')[0]).parents('div',true).find('button').removeAttr('disabled');
 				// define local context
-				//context.extend(_.extend({}, caps, {name: 'dvv aka Vladimir', lid: '#l1'}));
-				_.extend(context, caps, {name: 'dvv aka Vladimir', lid: '#l1'});
-				context.sync(context);
+				//var changes = _.extend({}, caps, {name: 'dvv aka Vladimir', lid: '#l1'});
+				_.extend(context, caps);
+				var changes = _.extend({}, {name: 'dvv aka Vladimir', lid: '#l1'});
+				this.updateContext(changes, {send: true});
 			});
-			comm1.on('change', function() {
-					console.log('CHANGE:', arguments);
+			comm1.on('change:groups', function(value) {
+				console.log('GROUPS:', arguments);
+			});
+			comm1.on('change:ping', function(value) {
+				console.log('CAN RECEIVE:', arguments);
+			});
+			comm1.on('change', function(changes) {
+				console.log('CHANGE:', this, arguments);
 			});
 			comm1.on('disconnect', function() {
 				// `this` is the socket
@@ -51,77 +58,38 @@
 				// `this` is the socket
 				console.log('RECONNECT', this);
 			});
-// demonstrate multi connections work
-if (false) {
-			// establish websocket connection #2
-			window.comm2 = new WSComm(null, {
-				/* any other host and options you like! */
-				liveFunctions: true,
-				onContext: function(reset) {
-					console.log('READY!', reset);
-					window.s2 = this;
-					var context = this.context;
-					// N.B. notice the plain call of context remote function
-					if (!context.user || !context.user.id) return context.signin('123-2');
-					$($('input[data-id]')[1]).parents('div',true).find('button').removeAttr('disabled');
-					context.extend(_.extend({}, caps, {name: 'Vladimir aka dvv', lid: '#l2'}));
-				}
-			});
-			// establish websocket connection #N
-			window.comm3 = new WSComm(null, {
-				/* any other host and options you like! */
-				onContext: function(reset) {
-					console.log('READY!', reset);
-					window.s3 = this;
-					var context = this.context;
-					if (!context.user || !context.user.id) return context.rpc('signin', '123-3');
-					$($('input[data-id]')[2]).parents('div',true).find('button').removeAttr('disabled');
-					context.extend(_.extend({}, caps, {name: 'dronnikov@gmail.com', lid: '#l3'}));
-				}
-			});
-}
 $.domReady(function() {
 			// handle posting
 			$('body').delegate('button.send', 'click', function(ev) {
 				var input = $(this).previous();
 				var id = input.attr('data-id');
 				var text = input.val();
-				window['comm'+id].post(function() {
-					console.log('POSTED!', arguments);
-					input.val('');
-				}, text);
+				window['comm'+id].post(text);
+				input.val('');
 			});
 			// handle joining
 			$('body').delegate('button.join', 'click', function(ev) {
 				var input = $(this).previous().previous();
 				var id = input.attr('data-id');
 				var text = input.val();
-				window['comm'+id].join(function(groups) {
-					console.log('JOINED!', arguments, this);
-					//this.groups = groups;
-					input.val('');
-				}, text);
+				window['comm'+id].join(text);
+				input.val('');
 			});
 			// handle leaving
 			$('body').delegate('button.leave', 'click', function(ev) {
 				var input = $(this).previous().previous().previous();
 				var id = input.attr('data-id');
 				var text = input.val();
-				window['comm'+id].leave(function(groups) {
-					console.log('LEFT!', arguments);
-					//this.groups = groups;
-					input.val('');
-				}, text);
+				window['comm'+id].leave(text);
+				input.val('');
 			});
 			// handle signin
 			$('body').delegate('button.signin', 'click', function(ev) {
 				var input = $(this).previous().previous().previous().previous();
 				var id = input.attr('data-id');
 				var text = input.val();
-				window['comm'+id].signin(function() {
-					console.log('SIGNED!', arguments);
-					input.val('');
-				}, text);
+				window['comm'+id].signin(text);
+				input.val('');
 			});
 });
 		});
@@ -134,14 +102,6 @@ $.domReady(function() {
 <div>
 Your message as dvv: <input data-id="1" type="text"/><button class="send" disabled="disabled">Send</button><button class="join" disabled="disabled">Join</button><button class="leave" disabled="disabled">Leave</button><button class="signin" disabled="disabled">Sign In</button><br/>
 <ol id="l1"></ol>
-</div>
-<div>
-Your message as Vladimir: <input data-id="2" type="text"/><button class="send" disabled="disabled">Send</button><button class="join" disabled="disabled">Join</button><button class="leave" disabled="disabled">Leave</button><button class="signin" disabled="disabled">Sign In</button><br/>
-<ol id="l2"></ol>
-</div>
-<div>
-Your message as dronnikov@gmail.com: <input data-id="3" type="text"/><button class="send" disabled="disabled">Send</button><button class="join" disabled="disabled">Join</button><button class="leave" disabled="disabled">Leave</button><button class="signin" disabled="disabled">Sign In</button><br/>
-<ol id="l3"></ol>
 </div>
 </body>
 </html>

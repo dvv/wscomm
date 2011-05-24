@@ -21,6 +21,16 @@ var push = Array.prototype.push;
 var hasOwn = Object.prototype.hasOwnProperty;
 
 //
+// simple nonce generator
+//
+function rnd() {
+	return Math.floor(Math.random() * 1e9).toString(36);
+}
+function nonce() {
+	return (Date.now() & 0x7fff).toString(36) + rnd() + rnd() + rnd();
+}
+
+//
 // safely determine whether `prop` is an own property of `obj`
 //
 function has(obj, prop) {
@@ -34,16 +44,6 @@ function callable(obj) {
 	// N.B. RegExp in V8 is also of type function,
 	// however we can punt on this
 	return typeof obj === 'function'; // && obj.call;
-}
-
-//
-// simple nonce generator
-//
-function rnd() {
-	return Math.floor(Math.random() * 1e9).toString(36);
-}
-function nonce() {
-	return (Date.now() & 0x7fff).toString(36) + rnd() + rnd() + rnd();
 }
 
 //
@@ -69,9 +69,32 @@ function drill(obj, path) {
 // invoke deep method of `this` identified by `path` with
 // optional parameters
 //
-function caller(path /*, args... */) {
+function caller(path) {
 	var fn = drill(this, path);
 	callable(fn) && fn.apply(this, slice.call(arguments, 1));
+}
+
+//
+// invoke `caller` for each element of `list` filtered with `filter`
+//
+function invoke(list, filter, path) {
+	var args = slice.call(arguments, 2);
+	// filter the list if the filtering function is given
+	if (callable(filter)) {
+		list = _.filter(list, filter);
+	// if `filter` is array, use it as list
+	} else if (_.isArray(filter)) {
+		list = filter;
+	// else make list from `filter`
+	} else if (Object(filter) === filter) {
+		list = [filter];
+	}
+	// return the filtered list unless arguments to make call are given
+	if (!args.length) return list;
+	// for each item in list perform RPC call
+	_.each(list, function(item) {
+		SocketProto.rpc.apply(item, args);
+	});
 }
 
 //
@@ -111,7 +134,7 @@ function encode(obj, onlyVariables) {
 //
 // deserialize a string to the object.
 //
-function decode(str) {
+function decode(str, context) {
 	// JSON.parse can throw...
 	try {
 		var obj = JSON.parse(str);
@@ -136,70 +159,15 @@ var SocketProto = CLIENT_SIDE ?
 	require('socket.io/lib/socket.io/client').prototype;
 
 //
-// update `this.context` with `changes` resetting it first
-// if `options.reset` is truthy.
-// if `options.send` is given send the changes to remote side
+// update `this.context` with `changes` resetting it first if `reset`
+// is truthy. if `socket` is given send the changes to it
+//
 // TODO: this could be overridden to support custom context prototypes.
 // Think of Backbone
 //
 SocketProto.updateContext = function(changes, options) {
 	if (!options) options = {};
 	var context = this.context;
-	var socket = this;
-
-//
-// deeply extend the `dst` with properties of `src`.
-// if a property of `src` is set to null then remove corresponding
-// `dst` property.
-// N.B. arrays are cloned
-//
-function extend(dst, src) {
-	var changed = false;
-	function _ext(dst, src) {
-		if (!src) return dst;
-		for (var prop in src) if (has(src, prop)) {
-			var v = src[prop];
-			var isValueArray = _.isArray(v);
-			var d = dst[prop];
-			// value is not ordinal?
-			if (Object(v) === v) {
-				// value is array?
-				if (isValueArray) {
-					// put its copy, not reference
-					v = v.slice();
-				// value is object?
-				} else {
-					// destination has no such property? create one
-					if (!has(dst, prop)) dst[prop] = {};
-				}
-			}
-			// value is ordinal. update property if value is actually new.
-			// emit context's "change:<property>" event
-			if (!_.isEqual(v, d) && !options.silent) {
-				changed = true;
-//console.log('CHEMIT', prop, v, d, dst);
-				socket.emit('change:' + prop, [v, d, dst]);
-			}
-			// destination is not ordinal?
-			if (Object(d) === d && !isValueArray) {
-				// recurse to merge
-console.log('RECURSE', _.extend({},d), _.extend({},v));
-				_ext(d, v);
-			// new value is undefined or null?
-			} else if (v == null) {
-				// remove the property
-				delete dst[prop];
-			} else {
-				dst[prop] = v;
-			}
-		}
-	}
-	_ext(dst, src);
-	// emit "change" event if anything has changed
-	changed && socket.emit('change', [src]);
-	return dst;
-}
-
 	// N.B. do not overwrite `context`, only mangle! That's why
 	// this way of purging old context
 	if (options.reset) {
@@ -210,7 +178,8 @@ console.log('RECURSE', _.extend({},d), _.extend({},v));
 		for (var i in context) delete context[i];
 	}
 	// apply changes
-	extend(context, changes);
+	// FIXME: should be context.extend(changes)!
+	extend.call(this, context, changes);
 	//context.extend(changes, options);
 	// persist changes
 	options.save !== false && this.emit('save');
@@ -235,13 +204,23 @@ console.log('RECURSE', _.extend({},d), _.extend({},v));
 //
 // invoke a remote function by `path`
 //
-SocketProto.rpc = function(path /*, args...*/) {
+SocketProto.cbs = {}; // callbacks
+SocketProto.rpc = function(path, callback /*, args...*/) {
+	var args = slice.call(arguments, 1);
+	// register callback, if any
+	if (callable(callback)) {
+		// consume `callback` argument
+		args.shift();
+		// N.B. callbacks are deleted once they are fired.
+		// unless a callback is fired, it holds the memory.
+		// we should introduce expiration for callbacks
+		var id = nonce();
+		this.cbs[id] = callback;
+	}
 	// do the call
-	var msg = {
-		cmd: 'call',
-		params: slice.call(arguments)
-	};
-	this.send(msg);
+	var msg = {cmd: 'call', id: id, method: path, params: args};
+	//this.send(msg);
+	this.send('~j~' + encode(msg));
 };
 
 //
@@ -258,7 +237,7 @@ SocketProto.reviveFunctions = function(obj) {
 			// "function" signature is met?
 			if (obj[prop] === THIS_IS_FUNC) {
 				// bind RPC caller
-				obj[prop] = _.bind(socket.rpc, socket, path);
+				obj[prop] = _.bind(SocketProto.rpc, socket, path);
 				// veto passing this function to remote side
 				obj[prop].veto = true;
 			// vanilla object
@@ -272,6 +251,17 @@ SocketProto.reviveFunctions = function(obj) {
 };
 
 //
+// send the reply to remote side. it will result in calling the
+// callback associated with this message `id`, at the remote side
+//
+SocketProto.reply = function(id /*, args... */) {
+	// nothing to do unless `id` is set
+	if (!id) return;
+	var args = slice.call(arguments, 1);
+	this.send({cmd: 'reply', id: id, params: args});
+};
+
+//
 // socket message arrived
 //
 SocketProto.onMessage = function(message) {
@@ -279,9 +269,24 @@ SocketProto.onMessage = function(message) {
 	console.log('MESSAGE', message);
 	var fn;
 	// remote side calls this side method
-	if (message.cmd === 'call') {
-		// do call the method, if it's a callable indeed
-		caller.apply(this.context, message.params);
+	if (message.cmd === 'call' &&
+		(fn = drill(this.context, message.method))) {
+		// the signature of remotely callable method is
+		// function(callback[, arg1[, arg2[, ...]]]). so we always place
+		// a callback stub to fit the signature
+		var args = [_.bind(SocketProto.reply, this, message.id)];
+		// optional arguments come from message.params
+		message.params && push.apply(args, message.params);
+		// do call the method, if it's a function indeed
+		callable(fn) && fn.apply(this.context, args);
+	// uniquely identified reply from the remote side arrived.
+	// given reply id, lookup and call corresponding callback
+	} else if (message.cmd === 'reply' && message.id &&
+		(fn = this.cbs[message.id])) {
+		// remove the callback to please GC
+		delete this.cbs[message.id];
+		// callback
+		fn.apply(this.context, message.params);
 	// remote context has changed
 	} else if (message.cmd === 'context') {
 		var changes = message.params[0];
@@ -295,6 +300,60 @@ SocketProto.onMessage = function(message) {
 		options.ready && this.emit('ready');
 	}
 };
+
+//
+// deeply extend the `dst` with properties of `src`.
+// if a property of `src` is set to null then remove corresponding
+// `dst` property.
+// N.B. arrays are cloned
+//
+function extend(dst, src, options) {
+	if (!options) options = {};
+	var root = this;
+	var changed = false;
+	function _ext(dst, src) {
+		if (!src) return dst;
+		for (var prop in src) if (has(src, prop)) {
+			var v = src[prop];
+			var d = dst[prop];
+			// value is not ordinal?
+			if (Object(v) === v) {
+				// value is array?
+				if (_.isArray(v)) {
+					// put its copy, not reference
+					v = v.slice();
+				// value is object?
+				} else {
+					// destination has no such property? create one
+					if (!has(dst, prop)) dst[prop] = {};
+					// destination has such property and it's not ordinal?
+					if (Object(d) === d) {
+						// recurse to merge
+						_ext(d, v);
+						continue;
+					}
+				}
+			}
+			// value is ordinal. update property if value is actually new.
+			// emit context's "change:<property>" event
+			if (!_.isEqual(v, d) && !options.silent) {
+				changed = true;
+				root.emit('change:' + prop, [v, d, dst]);
+			}
+			// new value is undefined or null?
+			if (v == null) {
+				// remove the property
+				delete dst[prop];
+			} else {
+				dst[prop] = v;
+			}
+		}
+	}
+	_ext(dst, src);
+	// emit "change" event if anything has changed
+	changed && root.emit('change');
+	return dst;
+}
 
 //
 // create shared context using `this` socket as transport layer
@@ -342,7 +401,7 @@ if (CLIENT_SIDE) {
 		if (!options) options = {};
 		_.defaults(options, {
 			// N.B. bundlers may use RegExp("location['p'+'ort']") as anchor
-			// to supply custom hardcoded port inplace
+			// to supply custom hardcoded port
 			port: location['p'+'ort'],
 			secure: location.protocol === 'https:',
 			transports: ['websocket', 'xhr-polling'],
@@ -355,11 +414,11 @@ if (CLIENT_SIDE) {
 		// attach message handlers
 		socket.on('message', socket.onMessage);
 		// create shared context
-		var context = socket.createContext(options.proto);
+		var ctx = socket.createContext(options.proto);
 		// make connection. upon connection, context will emit 'ready' event
 		socket.connect();
 		// return the context
-		return context;
+		return ctx;
 	};
 
 	// ender.js shim
@@ -376,57 +435,6 @@ if (CLIENT_SIDE) {
 	// server
 	//
 
-	// TODO: move out to a seprarte file!
-
-	//var IO = require('Socket.IO-node'); // upcoming 0.7.0
-	var IO = require('socket.io');
-
-	var ListenerProto =
-		require('socket.io/lib/socket.io/listener').prototype;
-
-	var older = IO.version.substring(0,3) === '0.6';
-	// patch older socket.io
-	if (older) {
-		(function() {
-			// patch listener to always provide request object
-			var onConnection = ListenerProto._onConnection;
-			ListenerProto._onConnection =
-				function(transport, req, res, httpUpgrade, head) {
-					// memo the request
-					this.req = req;
-					onConnection.apply(this, arguments);
-				};
-		})();
-	}
-
-	//
-	// invoke callable at `path` for each client of `this` socket
-	// which passed `filter` test
-	//
-	ListenerProto.invoke = function(filter, path) {
-		var list = this.clients;
-		var args = slice.call(arguments, 1);
-		// filter the list if the filtering function is given
-		if (callable(filter)) {
-			list = _.filter(list, filter);
-		// if `filter` is array, use it as list
-		} else if (_.isArray(filter)) {
-			list = filter;
-		// else make list from `filter`
-		} else if (Object(filter) === filter) {
-			list = [filter];
-		}
-		// return the filtered list unless arguments to make call are given
-		if (!args.length) return list;
-		// for each item in list perform RPC call
-		_.each(list, function(item) {
-			item.rpc.apply(item, args);
-		});
-	};
-
-	// debugging only
-	ListenerProto.__defineGetter__('ctx', function() {return _.toArray(this.clients)[0].context;});
-
 	var listen = function(server, options) {
 
 		// set default options
@@ -435,8 +443,36 @@ if (CLIENT_SIDE) {
 			transports: ['websocket', 'xhr-polling']
 		});
 
+		//var IO = require('Socket.IO-node'); // upcoming 0.7.0
+		var IO = require('socket.io');
+		var older = IO.version.substring(0,3) === '0.6';
+		// patch older socket.io
+		if (older) (function() {
+		// patch listener to always provide request object
+		var onConnection = IO.Listener.prototype._onConnection;
+		IO.Listener.prototype._onConnection =
+			function(transport, req, res, httpUpgrade, head) {
+				// memo the request
+				this.req = req;
+				onConnection.apply(this, arguments);
+			};
+		// patch ws/wss logic
+		var WSTpt = require('socket.io/lib/socket.io/transports/websocket');
+		WSTpt.prototype._isSecure = function() {
+			// N.B. we always "mirror" security: https -> wss, http -> ws
+			return this.request.headers.origin.substring(0, 6) === 'https:';
+		};
+		// patch session id generator.
+		// useful to provide a stronger nonce, e.g.
+		if (options.generateSessionId) {
+			var Client = require('socket.io/lib/socket.io/client');
+			Client.prototype._generateSessionId = options.generateSessionId;
+		}
+		})();
+
 		// start websocket listener
 		var ws = IO.listen(server, options);
+
 		// on client connection...
 		(older ? ws : ws.sockets).on('connection', function(client) {
 			// initialize shared context
@@ -446,6 +482,8 @@ if (CLIENT_SIDE) {
 			// the rest initialization is left for user  code
 		});
 
+		ws.__defineGetter__('ctx', function() {return _.toArray(this.clients)[0].context;});
+
 		// return the listener
 		return older ? ws : ws.sockets;
 	};
@@ -454,6 +492,7 @@ if (CLIENT_SIDE) {
 	module.exports = {
 		listen: listen,
 		nonce: nonce,
+		invoke: invoke,
 		encode: encode,
 		decode: decode
 	};
