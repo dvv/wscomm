@@ -13,12 +13,11 @@ var sessionOptions = {
 	timeout: 86400000
 };
 
-
 var IO = require('socket.io');
 require('./ws-patch');
 var Redis = require('redis');
 var Backbone = require('backbone');
-var Capsule = require('capsule');
+var Capsule = require('./capsule');
 
 /**
  * well-known useful functions
@@ -77,7 +76,7 @@ function drill(obj, path) {
 // invoke deep method of `this` identified by `path` with
 // optional parameters
 //
-function caller(path) {
+function caller(path /*, args... */) {
 	var fn = drill(this, path);
 	callable(fn) && fn.apply(this, slice.call(arguments, 1));
 }
