@@ -183,7 +183,7 @@ function extend(dst, src) {
 			// destination is not ordinal?
 			if (Object(d) === d && !isValueArray) {
 				// recurse to merge
-console.log('RECURSE', _.extend({},d), _.extend({},v));
+//console.log('RECURSE', _.extend({},d), _.extend({},v));
 				_ext(d, v);
 			// new value is undefined or null?
 			} else if (v == null) {
