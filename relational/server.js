@@ -1,41 +1,26 @@
-var Backbone = require('backbone-rel');
-//console.log(Backbone);
+var Backbone = require('./model');
+console.log(Backbone);
 
-var Foo = global.Foo = Backbone.RelationalModel.extend({
-	relations: [{
-		type: Backbone.HasMany,
-		key: 'bars',
-		relatedModel: 'Bar',
-		includeInJSON: true,
-		reverseRelation: {
-			key: 'foo'
+var browserify = require('browserify')({
+    base: __dirname,
+    require: ['underscore', 'backbone', 'backbone-rel']
+});
+require('http').createServer(function(req, res) {
+	if (req.url === '/') req.url = '/index.html';
+	require('fs').readFile(__dirname + req.url, function(err, data) {
+		if (err) {
+			browserify(req, res, function() {
+				res.writeHead(404); res.end();
+			});
+		} else {
+			var mime = 'text/html';
+			if (req.url.slice(-3) === '.js') mime = 'text/javascript';
+			if (req.url.slice(-4) === '.css') mime = 'text/css';
+			res.writeHead(200, {'content-type': mime, 'content-length': data.length});
+			res.end(data);
 		}
-	}]
-});
+	});
+}).listen(8080);
 
-var Bar = global.Bar = Backbone.RelationalModel.extend();
-
-var bar1 = new Bar({
-	id: 'bar1'
-});
-
-var bar2 = new Bar({
-	id: 'bar2'
-});
-
-var foo1 = new Foo({
-	id: 'foo1',
-	hz: {a: 'b', c: 'd'}
-});
-
-//foo1.get('bars').add(bar1).add(bar2);
-
-foo1.bind('change', function() {
-	console.log('CHANGE', arguments);
-});
-
-var repl = require('repl').start('node> ');
+require('repl').start('node> ').context.foo1 = Backbone.foo1;
 process.stdin.on('close', process.exit);
-repl.context.foo1 = foo1;
-
-console.log(foo1.get('bars'));
