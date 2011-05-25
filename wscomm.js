@@ -85,8 +85,10 @@ var THIS_IS_FUNC = '~-=(){}=-~';
 //
 function encode(obj, onlyVariables) {
 	function replacer(k, v) {
-		// veto functions no pasaran!
-		if (callable(v) && !v.veto && !onlyVariables) {
+		// vetoed properties no pasaran!
+		if (v && v.veto) {
+			v = undefined;
+		} else if (callable(v) && !onlyVariables) {
 			v = THIS_IS_FUNC;
 		// raw remote functions no pasaran!
 		} else if (v === THIS_IS_FUNC) {
@@ -103,7 +105,7 @@ function encode(obj, onlyVariables) {
 		var str = JSON.stringify(obj, replacer);
 	} catch(err) {
 		// ...silently fail
-		str = '';
+		str = '{}';
 	}
 	return str;
 }
@@ -122,30 +124,83 @@ function decode(str) {
 }
 
 //
-// in browser?
-//
-var CLIENT_SIDE = typeof window !== 'undefined';
+// shared context prototype. should provide on/un/emit/update
+// N.B. anything put in prototype won't be shared with remote end.
+function Context() {}
+// eventing, stolen deliberately from Backbone :)
+// TODO: inhibit syncing of underscored properties?
+Context.prototype.on = function(ev, callback) {
+	var calls = this._callbacks || (this._callbacks = {veto: true});
+	var list  = this._callbacks[ev] || (this._callbacks[ev] = []);
+	list.push(callback);
+	return this;
+};
+Context.prototype.un = function(ev, callback) {
+	var calls;
+	if (!ev) {
+		this._callbacks = {veto: true};
+	} else if (calls = this._callbacks) {
+		if (!callback) {
+			calls[ev] = [];
+		} else {
+			var list = calls[ev];
+			if (!list) return this;
+			for (var i = 0, l = list.length; i < l; i++) {
+				if (callback === list[i]) {
+					list.splice(i, 1);
+					break;
+				}
+			}
+		}
+	}
+	return this;
+};
+Context.prototype.emit = function(ev) {
+	var list, calls, i, l;
+	if (!(calls = this._callbacks)) return this;
+	if (list = calls[ev]) {
+		for (i = 0, l = list.length; i < l; i++) {
+			list[i].apply(this, Array.prototype.slice.call(arguments, 1));
+		}
+	}
+	if (list = calls['all']) {
+		for (i = 0, l = list.length; i < l; i++) {
+			list[i].apply(this, arguments);
+		}
+	}
+	return this;
+};
+
+Context.prototype.sync = function(changes, options) {
+	if (!options) options = {};
+	this.update(changes, options);
+	// notify remote end that context has changed
+	// send serialized context to the remote end
+	var s = encode({
+		cmd: 'context',
+		// `reset` controls whether to send the whole context replacing
+		// the current one
+		// N.B. no changes means to force sending the whole context.
+		// this allows to group changes in "package" and send them
+		// in one go
+		params: [changes && !options.reset ? changes : this, options]
+	});
+	// N.B. we have "insight" here of how socket.io serializes JSON ;)
+	// FIXME: this should be fixed
+	this.getSocket().send('~j~' + s);
+	return this;
+};
 
 //
-// upgrade socket prototype to support functions calls over the wire
-// and state exchange between the two sides
-//
-
-var SocketProto = CLIENT_SIDE ?
-	io.Socket.prototype :
-	require('socket.io/lib/socket.io/client').prototype;
-
-//
-// update `this.context` with `changes` resetting it first
+// update `this` with `changes` resetting it first
 // if `options.reset` is truthy.
 // if `options.send` is given send the changes to remote side
 // TODO: this could be overridden to support custom context prototypes.
 // Think of Backbone
 //
-SocketProto.updateContext = function(changes, options) {
+Context.prototype.update = function(changes, options) {
 	if (!options) options = {};
-	var context = this.context;
-	var socket = this;
+	var context = this;
 
 //
 // deeply extend the `dst` with properties of `src`.
@@ -178,7 +233,7 @@ function extend(dst, src) {
 			if (!_.isEqual(v, d) && !options.silent) {
 				changed = true;
 //console.log('CHEMIT', prop, v, d, dst);
-				socket.emit('change:' + prop, [v, d, dst]);
+				context.emit('change:' + prop, v, d, dst);
 			}
 			// destination is not ordinal?
 			if (Object(d) === d && !isValueArray) {
@@ -196,8 +251,7 @@ function extend(dst, src) {
 	}
 	_ext(dst, src);
 	// emit "change" event if anything has changed
-	changed && socket.emit('change', [src]);
-	return dst;
+	changed && context.emit('change', src);
 }
 
 	// N.B. do not overwrite `context`, only mangle! That's why
@@ -211,26 +265,22 @@ function extend(dst, src) {
 	}
 	// apply changes
 	extend(context, changes);
-	//context.extend(changes, options);
-	// persist changes
-	options.save !== false && this.emit('save');
-	// notify remote end that context has changed
-	if (options.send) {
-		// send serialized context to the remote end
-		var s = encode({
-			cmd: 'context',
-			// `reset` controls whether to send the whole context replacing
-			// the current one
-			// N.B. no changes means to force sending the whole context.
-			// this allows to group changes in "package" and send them
-			// in one go
-			params: [changes && !options.reset ? changes : context, options]
-		});
-		// N.B. we have "insight" here of how socket.io serializes JSON ;)
-		// FIXME: this should be fixed
-		this.send('~j~' + s);
-	}
+	return this;
 };
+
+//
+// in browser?
+//
+var CLIENT_SIDE = typeof window !== 'undefined';
+
+//
+// upgrade socket prototype to support functions calls over the wire
+// and state exchange between the two sides
+//
+
+var SocketProto = CLIENT_SIDE ?
+	io.Socket.prototype :
+	require('socket.io/lib/socket.io/client').prototype;
 
 //
 // invoke a remote function by `path`
@@ -283,43 +333,30 @@ SocketProto.onMessage = function(message) {
 		// do call the method, if it's a callable indeed
 		caller.apply(this.context, message.params);
 	// remote context has changed
-	} else if (message.cmd === 'context') {
+	} else if (message.cmd === 'context' && CLIENT_SIDE) {
 		var changes = message.params[0];
 		var options = message.params[1] || {};
 		// revive functions from THIS_IS_FUNC signatures
 		this.reviveFunctions(changes);
 		// update the context
-		delete options.send;
-		this.updateContext(changes, options);
+		this.context.update(changes, options);
 		// remote context first initialized?
-		options.ready && this.emit('ready');
+		options.ready && this.context.emit('ready', this);
 	}
 };
 
 //
 // create shared context using `this` socket as transport layer
 // `context` is template initial object
+// N.B. should be overridden
 //
-SocketProto.createContext = function(proto) {
+SocketProto.createContext = function() {
 	// cache
 	var socket = this;
-	// shared context prototype
-	// N.B. anything put in prototype won't be shared with remote end.
-	function Context() {}
-	if (proto) {
-		Context.prototype = _.extend({}, proto);
-	}
-	//Context.prototype.extend = _.bind(extend, context);
-	Context.prototype.on = _.bind(this.on, this);
-	//Context.prototype.once = _.bind(this.once, this);
 	// create shared context
 	this.context = new Context();
-	//this.context.extend = _.bind(extend, this, this.context);
-	/*this.context.on = _.bind(this.on, this);
-	this.context.on.veto = true;
-	this.context.once = _.bind(this.once, this);
-	this.context.once.veto = true;*/
-
+	this.context.getSocket = function() { return socket; };
+	this.context.getSocket.veto = true;
 	// export the context
 	return this.context;
 };
@@ -346,16 +383,14 @@ if (CLIENT_SIDE) {
 			port: location['p'+'ort'],
 			secure: location.protocol === 'https:',
 			transports: ['websocket', 'xhr-polling'],
-			rememberTransport: false,
-			// custom object to be used as shared context prototype
-			proto: null
+			rememberTransport: false
 		});
 		// create socket
 		var socket = new io.Socket(host, options);
 		// attach message handlers
 		socket.on('message', socket.onMessage);
 		// create shared context
-		var context = socket.createContext(options.proto);
+		var context = socket.createContext();
 		// make connection. upon connection, context will emit 'ready' event
 		socket.connect();
 		// return the context
@@ -376,7 +411,7 @@ if (CLIENT_SIDE) {
 	// server
 	//
 
-	// TODO: move out to a seprarte file!
+	// TODO: move out to a separate file!
 
 	//var IO = require('Socket.IO-node'); // upcoming 0.7.0
 	var IO = require('socket.io');

@@ -6,17 +6,6 @@ var Ws = require('./wscomm');
 var Redis = require('redis');
 
 //
-// well-known useful functions
-//
-var slice = Array.prototype.slice;
-var push = Array.prototype.push;
-
-var callable = _.isFunction;
-function call(obj) {
-	if (callable(obj)) obj.apply(this, Array.prototype.slice.call(arguments, 1));
-}
-
-//
 // given session id, return the context
 // N.B. it can be reused in vanilla middleware
 //
@@ -37,7 +26,7 @@ function getContext(sid) {
 				self.sync(context, true);
 			}
 			// context getter is a function?
-			if (callable(getContext)) {
+			if (typeof getContext === 'function') {
 				// getter's arity is > 1? --> assume it's node-style async
 				if (getContext.length > 1) {
 					getContext.call(node, sid, function(err, result) {
@@ -180,7 +169,7 @@ function auth(url) {
 			// set the session so that we can persist the shared context
 			req.session = {
 				user: {
-					id: Ws.nonce(),
+					id: 'dvv',//Ws.nonce(),
 					email: 'try@find.me'
 				}
 			};
@@ -228,6 +217,7 @@ function Node(httpStack, httpPort) {
 			console.log('FAILED TO PARSE SESSION', err.stack);
 		}
 		// setup initial context
+		var context = client.context;
 		// TODO: this should be new App(...), and be reused at client side!
 		var caps = getContext.call(node, client.clientId);
 		// honor session
@@ -235,40 +225,40 @@ function Node(httpStack, httpPort) {
 			if (result) {
 				var session = Ws.decode(result);
 				// honor saved context
-				///client.updateContext(session, {save: false, silent: true});
+				context.update(session, {silent: true});
 			}
 			// honor caps
-			client.updateContext(caps, {save: false, silent: true});
-			// honor sync
-			client.updateContext({
-				sync: function(changes) {
-					// here should go validation
-console.log('SYNC', arguments);
-					client.updateContext(changes, {send: true});
-				}
-			}, {save: false, silent: true});
+			context.update(caps, {silent: true});
 			// send the resulting context
-			//client.updateContext(null, {save: false, send: true, ready: true});
-			client.updateContext(null, {save: false, send: true, ready: true});
+			//context.update(null, {send: true, ready: true});
+			context.sync(null, {ready: true});
 			console.log('CONNECTED!', client.clientId, client.context);
-		});
-		// client wants to save its state
-		client.on('save', function(callback) {
-			// backup the context, pruning both local and remote functions
-			var s;
-			node.db.set(['session:' + this.clientId, s = Ws.encode(this.context, true)], callback);
-			console.log('SAVED!', s);
 		});
 		// client disconnected
 		client.on('disconnect', function() {
-			// TODO: should we emit 'save' here, just in case ;)
 			console.log('DISCONNECTED!', arguments);
 		});
+
+client.on('message', function(message) {
+	if (!message) return;
+	// remote context has changed
+	if (message.cmd === 'context') {
+console.log('CONTEXTCHANGED');
+message.client = client.clientId;
+node.pub.publish('bcast', message);
+	}
+});
+
+
 		// context `obj[property]` being `oldValue` is changing to `value`
-		client.on('change', function() {
-			console.log('CHANGE', arguments);
-			//client.updateContext(null, {save: false, send: true});
-			//node.pub.publish('bcast', Ws.encode({cmd: 'change', property: property}));
+		context.on('change', function() {
+			var args = Array.prototype.slice.call(arguments);
+			console.log('CHANGE', args);
+			// backup the context, pruning all functions
+			node.db.set(['session:' + client.clientId, Ws.encode(this, true)], function() {
+				/// notify neighbors
+				///node.pub.publish('bcast', Ws.encode({cmd: 'change', client: client.clientId, args: args}));
+			});
 		});
 	});
 
@@ -289,15 +279,28 @@ Node.prototype.invoke = function(path, args) {
 	//console.log('INVOKING', arguments);
 	this.pub.publish('bcast', Ws.encode({
 		cmd: 'invoke',
-		args: slice.call(arguments)
+		args: Array.prototype.slice.call(arguments)
 	}));
 };
 Node.prototype.onBroadcast = function(pattern, message) {
-	//console.log('BCASTEDMESSAGE', arguments);
+	var node = this;
+	console.log('BCASTEDMESSAGE', arguments);
 	if (!message) return;
 	message = Ws.decode(message);
-	if (message.cmd === 'change') {
-		console.log('CHANGE ARRIVED', message);
+	if (message.cmd === 'context') {
+		var changes = message.params[0];
+		var options = message.params[1] || {};
+		console.log('CHANGE ARRIVED', node.id, message.client, changes);
+		_.each(this.ws.clients, function(client) {
+			if (client.clientId !== message.client) return;
+			var context = client.context;
+			// revive functions from THIS_IS_FUNC signatures
+			client.reviveFunctions(changes);
+			// update the context
+			context.update(changes, options);
+			// remote context first initialized?
+			options.ready && context.emit('ready', client);
+		});
 	} else if (message.cmd === 'invoke') {
 		// FIXME: null means all clients. howto use filters?
 		this.ws.invoke.apply(this.ws, [null].concat(message.args));
@@ -309,9 +312,9 @@ Node.prototype.onBroadcast = function(pattern, message) {
  */
 
 var stack = middleware();
-var node1 = new Node(stack, 3001);
-var node2 = new Node(stack, 3002);
-var node3 = new Node(stack, 3003);
+var node1 = new Node(stack, 3000); node1.id = 3000;
+var node2 = new Node(stack, 3002); node2.id = 3002;
+var node3 = new Node(stack, 3003); node3.id = 3003;
 
 /**
  * REPL for tests.

@@ -24,39 +24,67 @@
 			window.comm1 = new WSComm(null, {
 			});
 			// important to run this only once!
-			comm1.on('ready', function() {
-				// `this` is the socket. The only chance to keep it somewhere in closures
-				window.s1 = this;
-				// `this.context` is the context
-				// `reset` is whether to flush the current context
-				console.log('READY!', this);
-				var context = this.context;
+			comm1.on('ready', function(socket) {
+				console.log('READY1', this, socket);
+				// `socket` is the transport socket.
+				// here is the only chance to keep it somewhere in closures
+				socket.on('disconnect', function() {
+					console.log('DISCONNECT1', this);
+				});
+				socket.on('reconnect', function() {
+					console.log('RECONNECT1', this);
+				});
 				// not signed in?
-				if (!context.user || !context.user.id) return context.signin('123-1');
+				if (!this.user || !this.user.id) return this.signin('123-1');
 				// enable commands
 				$($('input[data-id]')[0]).parents('div',true).find('button').removeAttr('disabled');
 				// define local context
 				//var changes = _.extend({}, caps, {name: 'dvv aka Vladimir', lid: '#l1'});
-				_.extend(context, caps);
+				_.extend(this, caps);
 				var changes = _.extend({}, {name: 'dvv aka Vladimir', lid: '#l1'});
-				this.updateContext(changes, {send: true});
+				this.sync(changes);
 			});
 			comm1.on('change:groups', function(value) {
-				console.log('GROUPS:', arguments);
+				console.log('GROUPS1:', arguments);
 			});
 			comm1.on('change:ping', function(value) {
-				console.log('CAN RECEIVE:', arguments);
+				console.log('CAN RECEIVE1:', arguments);
 			});
 			comm1.on('change', function(changes) {
-				console.log('CHANGE:', this, arguments);
+				console.log('CHANGE1:', this, arguments);
 			});
-			comm1.on('disconnect', function() {
-				// `this` is the socket
-				console.log('DISCONNECT', this);
+			// establish websocket connection #2
+			window.comm2 = new WSComm(null, {
 			});
-			comm1.on('reconnect', function() {
-				// `this` is the socket
-				console.log('RECONNECT', this);
+			// important to run this only once!
+			comm2.on('ready', function(socket) {
+				console.log('READY2', this, socket);
+				// `socket` is the transport socket.
+				// here is the only chance to keep it somewhere in closures
+				socket.on('disconnect', function() {
+					console.log('DISCONNECT2', this);
+				});
+				socket.on('reconnect', function() {
+					console.log('RECONNECT2', this);
+				});
+				// not signed in?
+				if (!this.user || !this.user.id) return this.signin('123-1');
+				// enable commands
+				$($('input[data-id]')[1]).parents('div',true).find('button').removeAttr('disabled');
+				// define local context
+				//var changes = _.extend({}, caps, {name: 'dvv aka Vladimir', lid: '#l1'});
+				_.extend(this, caps);
+				var changes = _.extend({}, {name: 'dvv aka Vladimir', lid: '#l2'});
+				this.sync(changes);
+			});
+			comm2.on('change:groups', function(value) {
+				console.log('GROUPS2:', arguments);
+			});
+			comm2.on('change:ping', function(value) {
+				console.log('CAN RECEIVE2:', arguments);
+			});
+			comm2.on('change', function(changes) {
+				console.log('CHANGE2:', this, arguments);
 			});
 $.domReady(function() {
 			// handle posting
@@ -83,14 +111,6 @@ $.domReady(function() {
 				window['comm'+id].leave(text);
 				input.val('');
 			});
-			// handle signin
-			$('body').delegate('button.signin', 'click', function(ev) {
-				var input = $(this).previous().previous().previous().previous();
-				var id = input.attr('data-id');
-				var text = input.val();
-				window['comm'+id].signin(text);
-				input.val('');
-			});
 });
 		});
 	</script>
@@ -100,8 +120,12 @@ $.domReady(function() {
 <a href='/auth'>Signin</a>
 </div>
 <div>
-Your message as dvv: <input data-id="1" type="text"/><button class="send" disabled="disabled">Send</button><button class="join" disabled="disabled">Join</button><button class="leave" disabled="disabled">Leave</button><button class="signin" disabled="disabled">Sign In</button><br/>
+Client #1: <input data-id="1" type="text"/><button class="send" disabled="disabled">Send</button><button class="join" disabled="disabled">Join</button><button class="leave" disabled="disabled">Leave</button><br/>
 <ol id="l1"></ol>
+</div>
+<div>
+Client #2: <input data-id="2" type="text"/><button class="send" disabled="disabled">Send</button><button class="join" disabled="disabled">Join</button><button class="leave" disabled="disabled">Leave</button><br/>
+<ol id="l2"></ol>
 </div>
 </body>
 </html>

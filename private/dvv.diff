@@ -1,0 +1,108 @@
+diff -Naur capsule.orig/capsule.js capsule/capsule.js
+--- capsule.orig/capsule.js	2011-05-25 01:03:35.000000000 -0400
++++ capsule/capsule.js	2011-05-25 01:02:34.000000000 -0400
+@@ -13,7 +13,17 @@
+     if (typeof exports !== 'undefined') {
+       Backbone = require('backbone');
+       _ = require('underscore')._;
+-      uuid = require('node-uuid');
++      try {
++        uuid = require('node-uuid');
++      } catch(err) {
++        // simpler nonce generator
++        uuid = function() {
++          function rnd() {
++            return Math.floor(Math.random() * 1e9).toString(36);
++          }
++          return (Date.now() & 0x7fff).toString(36) + rnd() + rnd() + rnd();
++        };
++      }
+       Capsule = exports;
+       server = true;
+     } else {
+@@ -72,6 +82,15 @@
+       this[label].parent = this;
+     },
+     
++    // ###send
++    // Sends JS object to the remote side.
++    // N.B. you have to set topmost model's socket property
++    send: function(obj) {
++      // get the socket
++      for (var root = this; root.parent; root = root.parent) ;
++      root.socket && root.socket.send(obj);
++    },
++    
+     // ###modelGetter
+     // Convenience method for retrieving any model, no matter where, by id.
+     modelGetter: function (id) {
+@@ -125,7 +144,7 @@
+     // ###deleteServer
+     // Sends delete event for `id` to server.
+     deleteServer: function () {
+-      socket.send({
++      this.send({
+         event: 'delete',
+         id: this.id
+       });
+@@ -134,7 +153,7 @@
+     // ###callServerMethod
+     // Send a method call event. To trigger a model method on the server (if allowed).
+     callServerMethod: function (method) {
+-      socket.send({
++      this.send({
+         event: 'method',
+         id: this.id,
+         method: method
+@@ -312,7 +331,7 @@
+     // ###setServer
+     // Our server version of the normal `set` method. Takes a hash of attributes
+     setServer: function(attrs) {
+-      socket.send({
++      this.send({
+         event: 'set',
+         id: this.id,
+         change: attrs
+@@ -322,7 +341,7 @@
+     // ###unsetServer
+     // Unsets a given property
+     unsetServer: function(property) {
+-      socket.send({
++      this.send({
+         event: 'unset',
+         id: this.id,
+         property: property
+@@ -355,6 +374,15 @@
+       if (this.id && !Capsule.models[this.id]) Capsule.models[this.id] = this;
+     },
+     
++    // ###send
++    // Sends JS object to the remote side.
++    // N.B. you have to set topmost model's socket property
++    send: function(obj) {
++      // get the socket
++      for (var root = this; root.parent; root = root.parent) ;
++      root.socket && root.socket.send(obj);
++    },
++    
+     // ###safeAdd
+     // Is used to add items to the collection from an untrusted source (the client)
+     // it inits the collection's model type. Sets the supplied properties on that new
+@@ -373,7 +401,7 @@
+     // ###addServer
+     // The server version of backbone's `add` method.
+     addServer: function (data) {
+-      socket.send({
++      this.send({
+         event: 'add',
+         id: this.id,
+         data: data
+@@ -383,7 +411,7 @@
+     // ###moveServer
+     // Send the `move` event
+     moveServer: function (id, newPosition) {
+-      socket.send({
++      this.send({
+         event: 'move',
+         collection: this.id,
+         id: id,
