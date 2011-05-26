@@ -1,3 +1,5 @@
+'use strict';
+
 if (typeof window === 'undefined') {
 	var _ = require('underscore');
 	var Backbone = exports = module.exports = require('backbone-rel');
@@ -10,7 +12,14 @@ Backbone.catchAll = function() {
 	console.log('EVENT', arguments);
 };
 
-var Foo = Backbone.Foo = Backbone.RelationalModel.extend({
+Backbone.M = Backbone.RelationalModel.extend({
+	initialize: function() {
+		this.bind('all', _.bind(Backbone.catchAll, this));
+		console.log('M');
+	}
+});
+
+var Foo = Backbone.Foo = Backbone.M.extend({
 	url: 'Foo',
 	relations: [{
 		type: Backbone.HasMany,
@@ -22,11 +31,13 @@ var Foo = Backbone.Foo = Backbone.RelationalModel.extend({
 		//}
 	}],
 	initialize: function() {
-		this.bind('all', _.bind(Backbone.catchAll, this));
+		//this.bind('all', _.bind(Backbone.catchAll, this));
+		this.__super__();
+		console.log('F');
 	}
 });
 
-var Bar = Backbone.Bar = Backbone.RelationalModel.extend({
+var Bar = Backbone.Bar = Backbone.M.extend({
 	url: 'Bar',
 	relations: [{
 		type: Backbone.HasMany,
@@ -38,14 +49,18 @@ var Bar = Backbone.Bar = Backbone.RelationalModel.extend({
 		//}
 	}],
 	initialize: function() {
-		this.bind('all', _.bind(Backbone.catchAll, this));
+		//this.bind('all', _.bind(Backbone.catchAll, this));
+		this.super();
+		console.log('Br');
 	}
 });
 
-var Baz = Backbone.Bar = Backbone.RelationalModel.extend({
+var Baz = Backbone.Bar = Backbone.M.extend({
 	url: 'Baz',
 	initialize: function() {
-		this.bind('all', _.bind(Backbone.catchAll, this));
+		//this.bind('all', _.bind(Backbone.catchAll, this));
+		this.__super__();
+		console.log('Bz');
 	}
 });
 

@@ -1,5 +1,7 @@
+'use strict';
+
 var Backbone = require('./model');
-console.log(Backbone);
+//console.log(Backbone);
 
 var browserify = require('browserify')({
     base: __dirname,
