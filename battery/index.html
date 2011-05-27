@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<script type="text/javascript" src="socket.io.js"></script>
+	<script type="text/javascript" src="jquery-1.6.1.min.js"></script>
+	<script type="text/javascript">
+		console.log('APPLOADED');
+count = [];
+function Socket(id) {
+	var self = this;
+	this.id = id;
+	count[id] = 0;;
+	var socket = this.socket = new io.Socket(null, {
+		transports: ['websocket', 'xhr-polling'],
+		rememberTransport: false
+	});
+	socket.on('connect', function() {
+	});
+	socket.on('message', function(message) {
+		//$('#l'+self.id).append('<li>' + JSON.stringify(message) + '</li>');
+		count[id]++;
+	});
+	socket.connect();
+}
+var s = [];
+for (var i = 0; i < 100; ++i) {
+	s[i] = new Socket(i+1);
+}
+setInterval(function() {
+	console.log('COUNT', Math.random(), JSON.stringify(count));
+}, 2000);
+	</script>
+</head>
+<body>
+<a href='auth'>Auth</a>
+<a href='#' onclick="for (var i in count) count[i] = 0;">Clear</a>
+<table>
+<thead>
+<th>s1</th><th>s2</th><th>s3</th><th>s4</th><th>
+</thead>
+<tbody>
+<tr>
+<td><ol id="l1"></ul></td>
+<td><ol id="l2"></ul></td>
+<td><ol id="l3"></ul></td>
+<td><ol id="l4"></ul></td>
+</tr>
+</tbody>
+</table>
+</body>
+</html>
