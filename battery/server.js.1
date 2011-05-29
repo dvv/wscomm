@@ -11,13 +11,35 @@ var Redis = require('redis');
 var Bison = require('bison');
 var Ws = require('socket.io');
 require('./ws-patch');
-var Context = require('./context');
 
 /**
  * Utility functions
  *
  * @api private
  */
+
+//
+// well-known shortcuts
+//
+var slice = Array.prototype.slice;
+var push = Array.prototype.push;
+var hasOwn = Object.prototype.hasOwnProperty;
+
+//
+// safely determine whether `prop` is an own property of `obj`
+//
+function has(obj, prop) {
+	return hasOwn.call(obj, prop);
+}
+
+//
+// determine loosely if obj is callable
+//
+function callable(obj) {
+	// N.B. RegExp in V8 is also of type function,
+	// however we can punt on this
+	return typeof obj === 'function'; // && obj.call;
+}
 
 //
 // simple nonce generator
@@ -27,6 +49,34 @@ function rnd() {
 }
 function nonce() {
 	return (Date.now() & 0x7fff).toString(36) + rnd() + rnd() + rnd();
+}
+
+//
+// safely get a deep property of `obj` descending using elements
+// in `path`
+//
+function drill(obj, path) {
+	var part;
+	if (Array.isArray(path)) {
+		for (var i = 0, l = path.length; i < l; i++) {
+			part = path[i];
+			obj = obj && has(obj, part) && obj[part] || null;
+		}
+		return obj;
+	} else if (path == null) {
+		return obj;
+	} else {
+		return obj && has(obj, path) && obj[path] || null;
+	}
+}
+
+//
+// invoke deep method of `this` identified by `path` with
+// optional parameters
+//
+function caller(path /*, args... */) {
+	var fn = drill(this, path);
+	callable(fn) && fn.apply(this, slice.call(arguments, 1));
 }
 
 /**
@@ -56,19 +106,7 @@ function Element(httpServer) {
 		var cid = client.clientId = 'dvv';
 		// setup initial context
 		db.get('c:' + cid, function(err, result) {
-			client.context = new Context(result, client);
-
-/*client.context.on('send', function(changes, options) {
-	// send serialized context to the remote end
-	var s = JSON.stringify({
-		cmd: 'context',
-		params: [changes, options]
-	});
-	// N.B. we have "insight" here of how socket.io serializes JSON ;)
-	// FIXME: this should be fixed
-	client.send('~j~' + s);
-});*/
-
+			client.context = result;
 			// notify neighbors
 			self.broadcast(client, {cmd: 'entered'});
 		});
@@ -130,26 +168,22 @@ if (callback) {
  */
 
 Element.prototype.onBroadcast = function(message) {
-	console.log('BCASTED', message);
 	var data = message.data;
 	if (!data) return;
 recved++;
 	var clients = this.ws.clients;
-	var cid = clients[data.from]; if (cid) cid = cid.clientId;
-	if (data.cmd === 'set') {
-		for (var i in clients) {
-			//if (clients[i].clientId === cid) {
-				this.onMessage.call(clients[i], data);
-			//}
-		}
-	} else if (data.cmd === 'call') {
-		for (var i in clients) {
-			this.onMessage.call(clients[i], data);
-		}
+	switch (data.cmd) {
+		case 'set':
+			for (var i in clients) {
+				if (clients[i].clientId === cid) {
+					this.onMessage.call(clients[i], data);
+				}
+			}
+		case 'call':
 	}
-	/*for (var i in clients) {
+	for (var i in clients) {
 		this.onMessage.call(clients[i], message);
-	}*/
+	}
 };
 
 /**
@@ -163,9 +197,7 @@ Element.prototype.onMessage = function(message) {
 	message.to = this.sessionId;
 	message.context = this.context;
 	console.log('MESSAGE', message);
-	if (message.data.cmd === 'call') {
-		this.context.invoke.apply(this.context, message.data.params);
-	}
+	if (message.data.cmd === 'set') {}
 	//this.send(message);
 };
 

@@ -1,0 +1,202 @@
+'use strict';
+
+var Klass = require('klass');
+
+var _ = require('underscore');
+
+//
+// well-known shortcuts
+//
+var slice = Array.prototype.slice;
+var push = Array.prototype.push;
+var hasOwn = Object.prototype.hasOwnProperty;
+
+//
+// safely determine whether `prop` is an own property of `obj`
+//
+function has(obj, prop) {
+	return hasOwn.call(obj, prop);
+}
+
+//
+// determine loosely if obj is callable
+//
+function callable(obj) {
+	// N.B. RegExp in V8 is also of type function,
+	// however we can punt on this
+	return typeof obj === 'function'; // && obj.call;
+}
+
+//
+// safely get a deep property of `obj` descending using elements
+// in `path`
+//
+function drill(obj, path) {
+	var part;
+	if (Array.isArray(path)) {
+		for (var i = 0, l = path.length; i < l; i++) {
+			part = path[i];
+			obj = obj && has(obj, part) && obj[part] || null;
+		}
+		return obj;
+	} else if (path == null) {
+		return obj;
+	} else {
+		return obj && has(obj, path) && obj[path] || null;
+	}
+}
+
+//
+// invoke deep method of `this` identified by `path` with
+// optional parameters
+//
+function caller(path /*, args... */) {
+	var fn = drill(this, path);
+	callable(fn) && fn.apply(this, slice.call(arguments, 1));
+}
+
+var Base = Klass(function() {
+}).statics({
+}).methods({
+	_callbacks: {},
+	on: function(ev, callback) {
+		var calls = this._callbacks;
+		var list  = calls[ev] || (calls[ev] = []);
+		list.push(callback);
+		return this;
+	},
+	un: function(ev, callback) {
+		var calls = this._callbacks;
+		if (!ev) {
+			for (var i in calls) delete calls[i];
+		} else {
+			if (!callback) {
+				calls[ev] = [];
+			} else {
+				var list = calls[ev];
+				if (!list) return this;
+				for (var i = 0, l = list.length; i < l; i++) {
+					if (callback === list[i]) {
+						list.splice(i, 1);
+						break;
+					}
+				}
+			}
+		}
+		return this;
+	},
+	emit: function(ev) {
+		var list, i, l;
+		var calls = this._callbacks;
+		if (list = calls[ev]) {
+			for (i = 0, l = list.length; i < l; i++) {
+				list[i].apply(this, Array.prototype.slice.call(arguments, 1));
+			}
+		}
+		if (list = calls['all']) {
+			for (i = 0, l = list.length; i < l; i++) {
+				list[i].apply(this, arguments);
+			}
+		}
+		return this;
+	},
+	//
+	// update `this` with `changes` resetting it first
+	// if `options.reset` is truthy.
+	// if `options.send` is given send the changes to remote side
+	//
+	update: function(changes, options) {
+		if (!options) options = {};
+		var context = this;
+
+		//
+		// deeply extend the `dst` with properties of `src`.
+		// if a property of `src` is set to null then remove corresponding
+		// `dst` property.
+		// N.B. arrays are cloned
+		//
+		function extend(dst, src) {
+			var changed = false;
+			function _ext(dst, src) {
+				if (!src) return dst;
+				for (var prop in src) if (has(src, prop)) {
+					var v = src[prop];
+					var isValueArray = Array.isArray(v);
+					var d = dst[prop];
+					// value is not ordinal?
+					if (Object(v) === v) {
+						// value is array?
+						if (isValueArray) {
+							// put its copy, not reference
+							v = v.slice();
+						// value is object?
+						} else {
+							// destination has no such property? create one
+							if (!has(dst, prop)) dst[prop] = {};
+						}
+					}
+					// value is ordinal. update property if value is actually new.
+					// emit context's "change:<property>" event
+					if (!_.isEqual(v, d) && !options.silent) {
+						changed = true;
+						context.emit('change:' + prop, v, d, dst);
+					}
+					// destination is not ordinal?
+					if (Object(d) === d && !isValueArray) {
+						// recurse to merge
+						_ext(d, v);
+					// new value is undefined or null?
+					} else if (v == null) {
+						// remove the property
+						delete dst[prop];
+					} else {
+						dst[prop] = v;
+					}
+				}
+			}
+			_ext(dst, src);
+			// emit "change" event if anything has changed
+			changed && context.emit('change', src);
+		}
+
+		// N.B. do not overwrite `context`, only mangle! That's why
+		// this way of purging old context
+		if (options.reset) {
+			for (var i in context) delete context[i];
+		}
+		// apply changes
+		extend(context, changes);
+		return this;
+	}
+});
+
+var Context = Base.extend(function(socket) {
+	this.__proto__.socket = socket;
+}).methods({
+	sync: function(changes, options) {
+		if (!options) options = {};
+		this.update(changes, options);
+		// notify remote end that context has changed
+		// send serialized context to the remote end
+		var s = encode({
+			cmd: 'context',
+			// `reset` controls whether to send the whole context replacing
+			// the current one
+			// N.B. no changes means to force sending the whole context.
+			// this allows to group changes in "package" and send them
+			// in one go
+			params: [changes && !options.reset ? changes : this, options]
+		});
+		// N.B. we have "insight" here of how socket.io serializes JSON ;)
+		// FIXME: this should be fixed
+		this.socket.send('~j~' + s);
+		return this;
+	}
+});
+
+var d = new Context;
+d.on('all', console.log);
+
+console.log(d);
+
+require('repl').start('node> ').context.d = d;

@@ -1,4 +1,4 @@
-/*
+/*!
  *
  * Copyright(c) 2011 Vladimir Dronnikov <dronnikov@gmail.com>
  * MIT Licensed
@@ -478,7 +478,7 @@ if (CLIENT_SIDE) {
 			client.createContext();
 			// attach message handler
 			client.on('message', client.onMessage);
-			// the rest initialization is left for user  code
+			// the rest initialization is left for user code
 		});
 
 		// return the listener

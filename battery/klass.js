@@ -1,0 +1,1 @@
+../../klass/klass.js

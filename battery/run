@@ -1,3 +1,4 @@
 #!/bin/sh
 
-FIBER_SHIM=1 LD_PRELOAD="/home/dvv/node_modules/fibers/src/coroutine.so" exec node server.js
+#FIBER_SHIM=1 LD_PRELOAD="/home/dvv/node_modules/fibers/src/coroutine.so" exec node server.js
+exec node-fibers server.js

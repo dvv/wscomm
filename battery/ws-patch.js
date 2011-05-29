@@ -3,7 +3,7 @@
 var IO = require('socket.io');
 
 //
-// patch older socket.io
+// patch old socket.io
 //
 
 if (IO.version.substring(0,3) === '0.6') {

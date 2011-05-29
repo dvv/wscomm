@@ -4,6 +4,10 @@
 	<meta charset="utf-8">
 	<script type="text/javascript" src="socket.io.js"></script>
 	<script type="text/javascript" src="jquery-1.6.1.min.js"></script>
+	<script type="text/javascript" src="underscore.js"></script>
+	<script type="text/javascript" src="klass.js"></script>
+	<script type="text/javascript" src="base.js"></script>
+	<script type="text/javascript" src="context.js"></script>
 	<script type="text/javascript">
 		console.log('APPLOADED');
 count = [];
@@ -15,20 +19,31 @@ function Socket(id) {
 		transports: ['websocket', 'xhr-polling'],
 		rememberTransport: false
 	});
+	socket.context = window['comm'+id] = new Context(null, socket);
+	/*socket.context.on('send', function(changes, options) {
+		// send serialized context to the remote end
+		var s = JSON.stringify({
+			cmd: 'context',
+			params: [changes, options]
+		});
+		// N.B. we have "insight" here of how socket.io serializes JSON ;)
+		// FIXME: this should be fixed
+		socket.send('~j~' + s);
+	});*/
 	socket.on('connect', function() {
 	});
 	socket.on('message', function(message) {
-		//$('#l'+self.id).append('<li>' + JSON.stringify(message) + '</li>');
+		$('#l'+self.id).append('<li>' + JSON.stringify(message) + '</li>');
 		count[id]++;
 	});
 	socket.connect();
 }
 var s = [];
-for (var i = 0; i < 100; ++i) {
+for (var i = 0; i < 2; ++i) {
 	s[i] = new Socket(i+1);
 }
 setInterval(function() {
-	console.log('COUNT', Math.random(), JSON.stringify(count));
+	//console.log('COUNT', Math.random(), JSON.stringify(count));
 }, 2000);
 	</script>
 </head>
