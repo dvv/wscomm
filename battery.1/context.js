@@ -18,16 +18,19 @@ var THIS_IS_FUNC = '~-=(){}=-~';
 
 var Context = Base.extend(function(initial, socket) {
 
+console.error('CONTEXTINIT', initial);
+
 	this.on('send', function(changes, options) {
 		// send serialized context to the remote end
 		var s = JSON.stringify({
-			cmd: 'context',
+			cmd: 'update',
 			params: [changes, options]
 		});
 		// N.B. we have "insight" here of how socket.io serializes JSON ;)
 		// FIXME: this should be fixed
 		socket.send('~j~' + s);
 	});
+	this.on('all', function() {console.error('EVENT', socket.sessionId, arguments);});
 
 }).statics({
 

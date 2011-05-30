@@ -7,16 +7,39 @@
  *
  */
 
-var _ = require('underscore');
 var Redis = require('redis');
 var Bison = require('bison');
-var Ws = require('wscomm');
+var Ws = require('socket.io');
+require('./ws-patch');
 
 /**
  * Utility functions
  *
  * @api private
  */
+
+//
+// well-known shortcuts
+//
+var slice = Array.prototype.slice;
+var push = Array.prototype.push;
+var hasOwn = Object.prototype.hasOwnProperty;
+
+//
+// safely determine whether `prop` is an own property of `obj`
+//
+function has(obj, prop) {
+	return hasOwn.call(obj, prop);
+}
+
+//
+// determine loosely if obj is callable
+//
+function callable(obj) {
+	// N.B. RegExp in V8 is also of type function,
+	// however we can punt on this
+	return typeof obj === 'function'; // && obj.call;
+}
 
 //
 // simple nonce generator
@@ -26,6 +49,34 @@ function rnd() {
 }
 function nonce() {
 	return (Date.now() & 0x7fff).toString(36) + rnd() + rnd() + rnd();
+}
+
+//
+// safely get a deep property of `obj` descending using elements
+// in `path`
+//
+function drill(obj, path) {
+	var part;
+	if (Array.isArray(path)) {
+		for (var i = 0, l = path.length; i < l; i++) {
+			part = path[i];
+			obj = obj && has(obj, part) && obj[part] || null;
+		}
+		return obj;
+	} else if (path == null) {
+		return obj;
+	} else {
+		return obj && has(obj, path) && obj[path] || null;
+	}
+}
+
+//
+// invoke deep method of `this` identified by `path` with
+// optional parameters
+//
+function caller(path /*, args... */) {
+	var fn = drill(this, path);
+	callable(fn) && fn.apply(this, slice.call(arguments, 1));
 }
 
 /**
@@ -47,31 +98,23 @@ function Element(httpServer) {
 		transports: ['websocket', 'xhr-polling'],
 		log: false
 	});
-	// assign unique id
-	ws.id = nonce();
 	// on new connection...
 	ws.on('clientConnect', function(client) {
 		// determine client id from the session
 		//console.log('SESS', client.listener.req.session);
 		// TODO: from session!
 		var cid = client.clientId = 'dvv';
-		// fetch initial context
+		// setup initial context
 		db.get('c:' + cid, function(err, result) {
-			if (result) result = Ws.decode(result);
-			client.update(result, {silent: true});
-console.error('NEW CONTEXT FOR', client.sessionId, client.context, result);
+			client.context = result;
 			// notify neighbors
 			self.broadcast(client, {cmd: 'entered'});
 		});
-		// on context changed...
-		client.on('change', function() {
-			console.error('CHANGE2', client.sessionId);
-			// persist context
-			db.set('c:' + client.clientId, Ws.encode(client.context, true), function(err, result) {
-				// notify neighbors
-				self.broadcast(client, {cmd: 'updated'});
-			});
-		});
+	});
+	// on new message...
+	ws.on('clientMessage', function(message, client) {
+		// broadcast the message
+		self.broadcast(client, message);
 	});
 	// on connection closed...
 	ws.on('clientDisconnect', function(client) {
@@ -100,13 +143,22 @@ console.error('NEW CONTEXT FOR', client.sessionId, client.context, result);
  * @api private
  */
 
-Element.prototype.broadcast = function(client, data) {
+Element.prototype.broadcast = function(client, data, callback) {
+sent++;
+if (callback) {
+	// publish data to 'battery' pub/sub channel
 	this.pub.publish('battery', Bison.encode({
-		bid: this.id,
+		//cid: client.clientId,
+		from: client.sessionId,
+		data: data
+	}), callback || function(){});
+} else {
+	this.pub.publish('battery', Bison.encode({
 		//cid: client.clientId,
 		from: client.sessionId,
 		data: data
 	}));
+}
 };
 
 /**
@@ -116,27 +168,22 @@ Element.prototype.broadcast = function(client, data) {
  */
 
 Element.prototype.onBroadcast = function(message) {
-	message.rid = this.id;
-	console.error('BCASTED', message);
-return;
 	var data = message.data;
 	if (!data) return;
+recved++;
 	var clients = this.ws.clients;
-	var cid = clients[data.from]; if (cid) cid = cid.clientId;
-	if (data.cmd === 'set') {
-		for (var i in clients) {
-			//if (clients[i].clientId === cid) {
-				this.onMessage.call(clients[i], data);
-			//}
-		}
-	} else if (data.cmd === 'call') {
-		for (var i in clients) {
-			this.onMessage.call(clients[i], data);
-		}
+	switch (data.cmd) {
+		case 'set':
+			for (var i in clients) {
+				if (clients[i].clientId === cid) {
+					this.onMessage.call(clients[i], data);
+				}
+			}
+		case 'call':
 	}
-	/*for (var i in clients) {
+	for (var i in clients) {
 		this.onMessage.call(clients[i], message);
-	}*/
+	}
 };
 
 /**
@@ -149,10 +196,8 @@ Element.prototype.onMessage = function(message) {
 	cliented++;
 	message.to = this.sessionId;
 	message.context = this.context;
-	console.error('MESSAGE', message);
-	if (message.data.cmd === 'call') {
-		this.context.invoke.apply(this.context, message.data.params);
-	}
+	console.log('MESSAGE', message);
+	if (message.data.cmd === 'set') {}
 	//this.send(message);
 };
 
@@ -238,5 +283,5 @@ function auth(url) {
 
 }
 
-require('repl').start('node> ').context.e = [e1, e2];
+require('repl').start('node> ');//.context.run = run;
 process.stdin.on('close', process.exit);

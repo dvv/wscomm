@@ -5,42 +5,17 @@
 	<script type="text/javascript" src="socket.io.js"></script>
 	<script type="text/javascript" src="jquery-1.6.1.min.js"></script>
 	<script type="text/javascript" src="underscore.js"></script>
-	<script type="text/javascript" src="klass.js"></script>
-	<script type="text/javascript" src="base.js"></script>
-	<script type="text/javascript" src="context.js"></script>
+	<script type="text/javascript" src="wscomm.js"></script>
 	<script type="text/javascript">
 		console.log('APPLOADED');
 count = [];
-function Socket(id) {
-	var self = this;
-	this.id = id;
-	count[id] = 0;;
-	var socket = this.socket = new io.Socket(null, {
-		transports: ['websocket', 'xhr-polling'],
-		rememberTransport: false
-	});
-	socket.context = window['comm'+id] = new Context(null, socket);
-	/*socket.context.on('send', function(changes, options) {
-		// send serialized context to the remote end
-		var s = JSON.stringify({
-			cmd: 'context',
-			params: [changes, options]
-		});
-		// N.B. we have "insight" here of how socket.io serializes JSON ;)
-		// FIXME: this should be fixed
-		socket.send('~j~' + s);
-	});*/
-	socket.on('connect', function() {
-	});
-	socket.on('message', function(message) {
-		$('#l'+self.id).append('<li>' + JSON.stringify(message) + '</li>');
-		count[id]++;
-	});
-	socket.connect();
-}
 var s = [];
-for (var i = 0; i < 2; ++i) {
-	s[i] = new Socket(i+1);
+for (var i = 0; i < 3; ++i) {
+	s[i] = new WSComm();
+	/*s[i].on('message', function(message) {
+		$('#l'+i).append('<li>' + JSON.stringify(message) + '</li>');
+		count[id]++;
+	});*/
 }
 setInterval(function() {
 	//console.log('COUNT', Math.random(), JSON.stringify(count));

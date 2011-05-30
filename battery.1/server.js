@@ -10,7 +10,9 @@
 var _ = require('underscore');
 var Redis = require('redis');
 var Bison = require('bison');
-var Ws = require('wscomm');
+var Ws = require('socket.io');
+require('./ws-patch');
+var Context = require('./context');
 
 /**
  * Utility functions
@@ -56,22 +58,39 @@ function Element(httpServer) {
 		// TODO: from session!
 		var cid = client.clientId = 'dvv';
 		// fetch initial context
+		var context = client.context = new Context(null, client);
+		// setup initial content
 		db.get('c:' + cid, function(err, result) {
-			if (result) result = Ws.decode(result);
-			client.update(result, {silent: true});
-console.error('NEW CONTEXT FOR', client.sessionId, client.context, result);
+			if (result) result = Context.decode(result);
+			context.update(result);//, {silent: true});
+console.error('NEW CONTEXT FOR', client.sessionId, context);
 			// notify neighbors
 			self.broadcast(client, {cmd: 'entered'});
 		});
-		// on context changed...
-		client.on('change', function() {
-			console.error('CHANGE2', client.sessionId);
+	});
+	// on new message...
+	ws.on('clientMessage', function(message, client) {
+		if (!message) return;
+		console.error('MESSAGE', message);
+		var fn;
+		// remote side calls this side method
+		if (message.cmd === 'call') {
+			// do call the method, if it's a callable indeed
+			client.context.invoke.apply(client.context, message.params);
+			// broadcast the message
+			//self.broadcast(client, message);
+		// remote context has changed
+		} else if (message.cmd === 'update') {
+			var changes = message.params[0];
+			var options = message.params[1] || {};
+			// update context
+			client.context.update.apply(client.context, message.params);//changes, options);
 			// persist context
-			db.set('c:' + client.clientId, Ws.encode(client.context, true), function(err, result) {
+			db.set('c:' + client.clientId, Context.encode(client.context), function(err, result) {
 				// notify neighbors
 				self.broadcast(client, {cmd: 'updated'});
 			});
-		});
+		}
 	});
 	// on connection closed...
 	ws.on('clientDisconnect', function(client) {
@@ -100,13 +119,25 @@ console.error('NEW CONTEXT FOR', client.sessionId, client.context, result);
  * @api private
  */
 
-Element.prototype.broadcast = function(client, data) {
+Element.prototype.broadcast = function(client, data, callback) {
+return;
+sent++;
+if (callback) {
+	// publish data to 'battery' pub/sub channel
+	this.pub.publish('battery', Bison.encode({
+		bid: this.id,
+		//cid: client.clientId,
+		from: client.sessionId,
+		data: data
+	}), callback || function(){});
+} else {
 	this.pub.publish('battery', Bison.encode({
 		bid: this.id,
 		//cid: client.clientId,
 		from: client.sessionId,
 		data: data
 	}));
+}
 };
 
 /**
@@ -121,6 +152,7 @@ Element.prototype.onBroadcast = function(message) {
 return;
 	var data = message.data;
 	if (!data) return;
+recved++;
 	var clients = this.ws.clients;
 	var cid = clients[data.from]; if (cid) cid = cid.clientId;
 	if (data.cmd === 'set') {

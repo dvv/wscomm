@@ -11,10 +11,12 @@
 !function(_, klass, undefined) {
 'use strict';
 
-var Base = klass(function(initial) {
+var Base = klass(function() {
 
-	// setup initial content
-	if (initial) this.update(initial);
+	//
+	// event callbacks
+	//
+	this._callbacks = {};
 
 }).statics({
 
@@ -40,11 +42,6 @@ var Base = klass(function(initial) {
 	}
 
 }).methods({
-
-	//
-	// event callbacks
-	//
-	_callbacks: {},
 
 	//
 	// add event handler
@@ -109,6 +106,7 @@ var Base = klass(function(initial) {
 	update: function(changes, options) {
 		if (!options) options = {};
 		var self = this;
+		var changed = false;
 
 		//
 		// deeply extend the `dst` with properties of `src`.
@@ -117,7 +115,6 @@ var Base = klass(function(initial) {
 		// N.B. arrays are cloned
 		//
 		function extend(dst, src) {
-			var changed = false;
 			function _ext(dst, src) {
 				if (Object(src) !== src) return dst;
 				for (var prop in src) if (src.hasOwnProperty(prop)) {
@@ -176,7 +173,7 @@ var Base = klass(function(initial) {
 		// notify of changes.
 		// `options.reset` means to send this whole object.
 		// falsy changes means to send this whole object.
-		if (options.send) {
+		if (changed) {// && options.send) {
 			if (options.reset || !changes) changes = this;
 			this.emit('send', changes, options);
 		}

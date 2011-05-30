@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<script type="text/javascript" src="socket.io.js"></script>
+	<script type="text/javascript" src="jquery-1.6.1.min.js"></script>
+	<script type="text/javascript" src="underscore.js"></script>
+	<script type="text/javascript" src="klass.js"></script>
+	<script type="text/javascript" src="base.js"></script>
+	<script type="text/javascript" src="context.js"></script>
+	<script type="text/javascript">
+		console.log('APPLOADED');
+count = [];
+function Socket(id) {
+	var self = this;
+	this.id = id;
+	count[id] = 0;;
+	var socket = this.socket = new io.Socket(null, {
+		transports: ['websocket', 'xhr-polling'],
+		rememberTransport: false
+	});
+	socket.context = window['comm'+id] = new Context(null, socket);
+
+	socket.on('message', function(message) {
+		if (!message) return;
+		console.log('MESSAGE', self.id, message);
+		var fn;
+		// remote side calls this side method
+		if (message.cmd === 'call') {
+			// do call the method, if it's a callable indeed
+			this.context.invoke.apply(this.context, message.params);
+		// remote context has changed
+		} else if (message.cmd === 'update') {
+			var changes = message.params[0];
+			var options = message.params[1] || {};
+			// revive functions from THIS_IS_FUNC signatures
+			/*Context.reviveFunctions(changes, function(path) {
+				return _.bind(socket.rpc, socket, path);
+			});*/
+			// update the context
+			this.context.update(changes, options);
+			// remote context first initialized?
+			options.ready && this.context.emit('ready', this);
+		}
+	});
+
+	socket.on('connect', function() {
+	});
+	socket.on('message', function(message) {
+		$('#l'+self.id).append('<li>' + JSON.stringify(message) + '</li>');
+		count[id]++;
+	});
+	socket.connect();
+}
+var s = [];
+for (var i = 0; i < 3; ++i) {
+	s[i] = new Socket(i+1);
+}
+setInterval(function() {
+	//console.log('COUNT', Math.random(), JSON.stringify(count));
+}, 2000);
+	</script>
+</head>
+<body>
+<a href='auth'>Auth</a>
+<a href='#' onclick="for (var i in count) count[i] = 0;">Clear</a>
+<table>
+<thead>
+<th>s1</th><th>s2</th><th>s3</th><th>s4</th><th>
+</thead>
+<tbody>
+<tr>
+<td><ol id="l1"></ul></td>
+<td><ol id="l2"></ul></td>
+<td><ol id="l3"></ul></td>
+<td><ol id="l4"></ul></td>
+</tr>
+</tbody>
+</table>
+</body>
+</html>

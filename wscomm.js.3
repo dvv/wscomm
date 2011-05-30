@@ -120,33 +120,63 @@ function decode(str) {
 }
 
 //
-// shared context prototype.
+// shared context prototype. should provide on/un/emit/update
 // N.B. anything put in prototype won't be shared with remote end.
 function Context() {}
 
-//
-// in browser?
-//
-var CLIENT_SIDE = typeof window !== 'undefined';
-
-//
-// upgrade socket prototype to support functions calls over the wire
-// and state exchange between the two sides
-//
-
-var SocketProto = CLIENT_SIDE ?
-	io.Socket.prototype :
-	require('socket.io/lib/socket.io/client').prototype;
+// eventing, stolen deliberately from Backbone :)
+// TODO: inhibit syncing of underscored properties?
+Context.prototype.on = function(ev, callback) {
+	var calls = this._callbacks || (this._callbacks = {veto: true});
+	var list  = this._callbacks[ev] || (this._callbacks[ev] = []);
+	list.push(callback);
+	return this;
+};
+Context.prototype.un = function(ev, callback) {
+	var calls;
+	if (!ev) {
+		this._callbacks = {veto: true};
+	} else if (calls = this._callbacks) {
+		if (!callback) {
+			calls[ev] = [];
+		} else {
+			var list = calls[ev];
+			if (!list) return this;
+			for (var i = 0, l = list.length; i < l; i++) {
+				if (callback === list[i]) {
+					list.splice(i, 1);
+					break;
+				}
+			}
+		}
+	}
+	return this;
+};
+Context.prototype.emit = function(ev) {
+	var list, calls, i, l;
+	if (!(calls = this._callbacks)) return this;
+	if (list = calls[ev]) {
+		for (i = 0, l = list.length; i < l; i++) {
+			list[i].apply(this, Array.prototype.slice.call(arguments, 1));
+		}
+	}
+	if (list = calls['all']) {
+		for (i = 0, l = list.length; i < l; i++) {
+			list[i].apply(this, arguments);
+		}
+	}
+	return this;
+};
 
 //
 // update this object with `changes`, firing 'change' events.
 // if `options.reset` is truthy, remove all properties first.
 // if `options.silent` is truthy, inhibit firing 'change' events
+// if `options.send` is truthy, fire 'send' event afterwards
 //
-SocketProto.update = function(changes, options) {
+Context.prototype.update = function(changes, options) {
 	if (!options) options = {};
 	var self = this;
-	var context = this.context;
 	var changed = false;
 
 	//
@@ -204,30 +234,38 @@ SocketProto.update = function(changes, options) {
 
 	// purge old properties properties
 	if (options.reset) {
-		for (var i in context) delete context[i];
+		for (var i in this) delete this[i];
 	}
 
 	// apply changes
-	extend(context, changes);
+	extend(this, changes);
 
-	// notify remote end that context has changed
-	if (changed) {
-		// `options.reset` means to send the whole context.
-		// falsy changes means to send the whole context
-		if (options.reset || !changes) changes = context;
-		// send serialized context to the remote end
-		var s = encode({
-			cmd: 'update',
-			params: [changes, options]
-		});
-		// N.B. we have "insight" here of how socket.io serializes JSON ;)
-		// FIXME: this should be fixed
-		this.send('~j~' + s);
+	// FIXME: consider moving to 'change' event
+	// notify of changes.
+	// `options.reset` means to send this whole object.
+	// falsy changes means to send this whole object.
+	if (changed) {// && options.send) {
+		if (options.reset || !changes) changes = this;
+		this.emit('send', changes, options);
 	}
 
 	// allow for chaining
 	return this;
 };
+
+//
+// in browser?
+//
+var CLIENT_SIDE = typeof window !== 'undefined';
+
+//
+// upgrade socket prototype to support functions calls over the wire
+// and state exchange between the two sides
+//
+
+var SocketProto = CLIENT_SIDE ?
+	io.Socket.prototype :
+	require('socket.io/lib/socket.io/client').prototype;
 
 //
 // invoke a remote function by `path`
@@ -273,24 +311,22 @@ SocketProto.reviveFunctions = function(obj) {
 //
 SocketProto.onMessage = function(message) {
 	if (!message) return;
-	console.error('MESSAGE', this.sessionId, message);
+	console.log('MESSAGE', message);
 	var fn;
 	// remote side calls this side method
 	if (message.cmd === 'call') {
 		// do call the method, if it's a callable indeed
 		invoke.apply(this.context, message.params);
 	// remote context has changed
-	} else if (message.cmd === 'update') {
+	} else if (message.cmd === 'update' && CLIENT_SIDE) {
 		var changes = message.params[0];
 		var options = message.params[1] || {};
 		// revive functions from THIS_IS_FUNC signatures
-		if (CLIENT_SIDE) {
-			this.reviveFunctions(changes);
-		}
+		this.reviveFunctions(changes);
 		// update the context
-		this.update(changes, options);
+		this.context.update(changes, options);
 		// remote context first initialized?
-		options.ready && this.emit('ready', this);
+		options.ready && this.context.emit('ready', this);
 	}
 };
 
@@ -304,6 +340,17 @@ SocketProto.createContext = function() {
 	var socket = this;
 	// create shared context
 	this.context = new Context();
+	this.context.on('send', function(changes, options) {
+		// notify remote end that context has changed
+		// send serialized context to the remote end
+		var s = encode({
+			cmd: 'update',
+			params: [changes, options]
+		});
+		// N.B. we have "insight" here of how socket.io serializes JSON ;)
+		// FIXME: this should be fixed
+		socket.send('~j~' + s);
+	});
 	// export the context
 	return this.context;
 };
@@ -317,13 +364,6 @@ if (CLIENT_SIDE) {
 	//
 	// browser
 	//
-
-	// patch inconsistent client-side event emitter
-	// N.B. won't be needed in 0.7
-	_emit = SocketProto.emit;
-	SocketProto.emit = function(name /*, args... */) {
-		_emit.call(this, name, slice.call(arguments, 1));
-	};
 
 	// N.B. we export constructor, not singleton,
 	// to allow having multiple instances
@@ -348,8 +388,7 @@ if (CLIENT_SIDE) {
 		// make connection. upon connection, context will emit 'ready' event
 		socket.connect();
 		// return the context
-		//return context;
-		return socket;
+		return context;
 	};
 
 	// ender.js shim
