@@ -11,11 +11,14 @@
 count = [];
 var s = [];
 for (var i = 0; i < 3; ++i) {
+	!function(i){
 	s[i] = new WSComm();
-	/*s[i].on('message', function(message) {
-		$('#l'+i).append('<li>' + JSON.stringify(message) + '</li>');
-		count[id]++;
-	});*/
+	s[i].on('message', function(message) {
+console.log('M', message);
+		$('#l'+(i+1)).append('<li>' + JSON.stringify(message) + '</li>');
+		count[i]++;
+	});
+	}(i);
 }
 setInterval(function() {
 	//console.log('COUNT', Math.random(), JSON.stringify(count));

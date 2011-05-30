@@ -177,12 +177,19 @@ SocketProto.update = function(changes, options) {
 						}
 					}
 				}
+				// value and destination are null/undefined? just skip
+				if (v == null && d == null) continue;
 				// value is ordinal. update property if value is
 				// actually new.
 				// emit self's "change:<property>" event
 				if (!_.isEqual(v, d) && !options.silent) {
 					changed = true;
-					self.emit('change:' + prop, v, d, dst);
+					// FIXME: whould not be needed in 0.7
+					if (CLIENT_SIDE) {
+						self.emit('change:' + prop, [v, d, dst]);
+					} else {
+						self.emit('change:' + prop, v, d, dst);
+					}
 				}
 				// destination is not ordinal?
 				if (Object(d) === d && !isValueArray) {
@@ -199,7 +206,11 @@ SocketProto.update = function(changes, options) {
 		}
 		_ext(dst, src);
 		// emit "change" event if anything has changed
-		changed && self.emit('change', src, options);
+		if (CLIENT_SIDE) {
+			changed && self.emit('change', [src, options]);
+		} else {
+			changed && self.emit('change', src, options);
+		}
 	}
 
 	// purge old properties properties
@@ -211,7 +222,7 @@ SocketProto.update = function(changes, options) {
 	extend(context, changes);
 
 	// notify remote end that context has changed
-	if (changed) {
+	if (changed || options.send) {
 		// `options.reset` means to send the whole context.
 		// falsy changes means to send the whole context
 		if (options.reset || !changes) changes = context;
@@ -271,9 +282,11 @@ SocketProto.reviveFunctions = function(obj) {
 //
 // socket message arrived
 //
-SocketProto.onMessage = function(message) {
+// N.B. this overrides original client-side handler
+//
+SocketProto.handleMessage = function(message) {
 	if (!message) return;
-	console.error('MESSAGE', this.sessionId, message);
+console.error('MESSAGE', CLIENT_SIDE ? this.transport.sessionId : this.sessionId, message);
 	var fn;
 	// remote side calls this side method
 	if (message.cmd === 'call') {
@@ -288,24 +301,22 @@ SocketProto.onMessage = function(message) {
 			this.reviveFunctions(changes);
 		}
 		// update the context
-		this.update(changes, options);
+		this.update(changes);
 		// remote context first initialized?
-		options.ready && this.emit('ready', this);
+		if (CLIENT_SIDE) {
+			options.ready && this.emit('ready', [this]);
+		} else {
+			options.ready && this.emit('ready', this);
+		}
 	}
 };
 
 //
 // create shared context using `this` socket as transport layer
-// `context` is template initial object
-// N.B. should be overridden
 //
 SocketProto.createContext = function() {
-	// cache
-	var socket = this;
 	// create shared context
-	this.context = new Context();
-	// export the context
-	return this.context;
+	return this.context = new Context();
 };
 
 //
@@ -318,12 +329,14 @@ if (CLIENT_SIDE) {
 	// browser
 	//
 
+if (false) {
 	// patch inconsistent client-side event emitter
-	// N.B. won't be needed in 0.7
-	_emit = SocketProto.emit;
+	// FIXME: won't be needed in 0.7
+	var _emit = SocketProto.emit;
 	SocketProto.emit = function(name /*, args... */) {
 		_emit.call(this, name, slice.call(arguments, 1));
 	};
+}
 
 	// N.B. we export constructor, not singleton,
 	// to allow having multiple instances
@@ -341,13 +354,15 @@ if (CLIENT_SIDE) {
 		});
 		// create socket
 		var socket = new io.Socket(host, options);
-		// attach message handlers
-		socket.on('message', socket.onMessage);
+		// attach message handler
+		socket.on('message', socket.handleMessage.bind(socket));
 		// create shared context
 		var context = socket.createContext();
-		// make connection. upon connection, context will emit 'ready' event
+		// make connection.
+		// upon connection, context will emit 'ready' event
 		socket.connect();
 		// return the context
+		// FIXME: if we return context, we loose .update()
 		//return context;
 		return socket;
 	};
@@ -387,7 +402,7 @@ if (CLIENT_SIDE) {
 			// N.B. the rest initialization is left for user code
 		})
 		.on('clientMessage', function(message, client) {
-			client.onMessage(message);
+			client.handleMessage(message);
 		});
 
 		// return the listener
