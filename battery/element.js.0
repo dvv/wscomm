@@ -9,6 +9,7 @@
 
 var _ = require('underscore');
 var Redis = require('redis');
+var Bison = require('bison');
 var Ws = require('wscomm');
 
 /**
@@ -28,7 +29,16 @@ var Element = module.exports = function(httpServer) {
 	this.http = httpServer;
 	var ws = this.ws = Ws.listen(this.http, {
 		transports: ['websocket', 'xhr-polling'],
-		log: false
+		log: false,
+		proto: function() {
+			_.extend(this, {
+				post: function(str) {
+					console.error('POST', str, this);
+					//this.fn('PONG', str);
+					//client.rpc('fn', 'PONG', str);
+				}
+			});
+		}
 	});
 	// assign unique id
 	ws.id = Ws.nonce();
@@ -41,14 +51,6 @@ var Element = module.exports = function(httpServer) {
 		// fetch initial context
 		db.get('c:' + cid, function(err, result) {
 			if (result) result = Ws.decode(result);
-			_.extend(result, {
-				post: function(str) {
-					console.error('POST', str, this);
-					//this.fn('PONG', str);
-					//client.rpc('fn', 'PONG', str);
-					ws.invoke('dvv', 'fn', 'PONG', str);
-				}
-			});
 			client.update(result, {ready: true});
 			// notify neighbors
 			///element.broadcast({cmd: 'entered'}, client);
@@ -56,29 +58,13 @@ var Element = module.exports = function(httpServer) {
 	});
 	// replace message handler
 	ws.removeAllListeners('clientMessage');
-	// process client messages
-	ws.on('clientMessage', function(message, client) {
-		client.handleMessage(message);
-		if (message.cmd === 'update') {
-			// persist context
-			db.set('c:' + client.clientId, Ws.encode(client.context, true), function(err, result) {
-				// notify neighbors
-console.error('SAVEFROM', client.sessionId, client.context);
-				element.broadcast(message, client);
-			});
-		}
-	});
+	// broadcast all client messages
+	ws.on('clientMessage', element.broadcast.bind(element));
 	// on connection closed...
 	ws.on('clientDisconnect', function(client) {
 		// notify neighbors
 		///element.broadcast({cmd: 'left'}, client);
 	});
-	// upgrade `invoke` method to support broadcasting
-	// N.B. this makes impossible to filter clients by filtering functions
-	ws.localInvoke = ws.invoke;
-	ws.invoke = function() {
-		element.broadcast({cmd: 'invoke', params: Array.prototype.slice.call(arguments)});
-	};
 
 	// pub/sub network
 	this.pub = Redis.createClient();
@@ -86,7 +72,7 @@ console.error('SAVEFROM', client.sessionId, client.context);
 	this.sub.psubscribe('*');
 	// on pub/sub message...
 	this.sub.on('pmessage', function(pattern, channel, message) {
-		message = JSON.parse(message);
+		message = Bison.decode(message);
 		if (channel === 'battery') {
 			element.onBroadcast(message);
 		}
@@ -103,13 +89,13 @@ console.error('SAVEFROM', client.sessionId, client.context);
 Element.prototype.broadcast = function(message, client) {
 
 	// publish to broadcast channel
-	this.pub.publish('battery', JSON.stringify({
+	this.pub.publish('battery', Bison.encode({
 		// element id
 		eid: this.id,
 		// client id
-		cid: client && client.clientId,
+		cid: client.clientId,
 		// client session id
-		sid: client && client.sessionId,
+		sid: client.sessionId,
 		// payload, usually initial message
 		message: message
 	}));
@@ -136,21 +122,30 @@ console.error('BCASTED', data);
 	// unpack original client session id
 	var sid = data.sid;
 
-	// spread updates
-	if (message.cmd === 'update') {
+	if (message.cmd === 'call') {
+		var client = clients[sid];
+		// execute client message handler
+		client && client.handleMessage(message);
+	} else if (message.cmd === 'update') {
 		// for every client of this element...
 		for (var i in clients) {
 			var client = clients[i];
-			// if client id equals original client id and
-			// client session id doesn't equal original client session id
-			if (client.clientId === cid && client.sessionId !== sid) {
+			// if client id equals original client id...
+			if (client.clientId === cid) {
 				// execute client message handler
 				client.handleMessage(message);
+				// if context changed and client session id
+				// equals original client session id...
+				if (client.sessionId === sid) {
+//console.error('SAVE', sid, client.context);
+					// persist context
+					this.db.set('c:' + cid, Ws.encode(client.context, true), function(err, result) {
+						// context saved
+						// ...
+					});
+				}
 			}
 		}
-	// spread invocation
-	} else if (message.cmd === 'invoke') {
-		this.ws.localInvoke.apply(this.ws, message.params);
 	}
 
 };

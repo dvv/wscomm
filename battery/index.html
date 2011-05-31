@@ -12,7 +12,22 @@ count = [];
 var s = [];
 for (var i = 0; i < 3; ++i) {
 	!function(i){
-	s[i] = new WSComm();
+	s[i] = new WSComm(null, {
+		proto: function() {
+			_.extend(this, {
+				fn: function(str) {
+					console.log('FN', i+1, str);
+				}
+			});
+		}
+	});
+	/*s[i].on('ready', function() {
+		s[i].update({
+			fn: function(str) {
+				console.log('FN', i+1, str);
+			}
+		});
+	});*/
 	s[i].on('message', function(message) {
 console.log('M', message);
 		$('#l'+(i+1)).append('<li>' + JSON.stringify(message) + '</li>');

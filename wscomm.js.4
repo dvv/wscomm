@@ -120,6 +120,11 @@ function decode(str) {
 }
 
 //
+// shared context prototype.
+// N.B. anything put in prototype won't be shared with remote end.
+function Context() {}
+
+//
 // in browser?
 //
 var CLIENT_SIDE = typeof window !== 'undefined';
@@ -151,11 +156,9 @@ SocketProto.update = function(changes, options) {
 	// N.B. arrays are cloned
 	//
 	function extend(dst, src) {
-		function _ext(dst, src, root) {
+		function _ext(dst, src) {
 			if (Object(src) !== src) return dst;
 			for (var prop in src) if (src.hasOwnProperty(prop)) {
-				// compose the path to this property
-				var path = root.concat([prop]);
 				var v = src[prop];
 				var isValueArray = _.isArray(v);
 				var d = dst[prop];
@@ -176,13 +179,6 @@ SocketProto.update = function(changes, options) {
 				}
 				// value and destination are null/undefined? just skip
 				if (v == null && d == null) continue;
-				// value is a THIS_IS_FUNC signature? make live function
-				if (v === THIS_IS_FUNC) {
-					// bind RPC caller
-					v = _.bind(self.rpc, self, path);
-					// veto passing this function to remote side
-					v.veto = path;
-				}
 				// value is ordinal. update property if value is
 				// actually new.
 				// emit self's "change:<property>" event
@@ -198,7 +194,7 @@ SocketProto.update = function(changes, options) {
 				// destination is not ordinal?
 				if (Object(d) === d && !isValueArray) {
 					// ...recurse to merge
-					_ext(d, v, path);
+					_ext(d, v);
 				// new value is undefined or null?
 				} else if (v == null) {
 					// ...remove the property
@@ -208,7 +204,7 @@ SocketProto.update = function(changes, options) {
 				}
 			}
 		}
-		_ext(dst, src, []);
+		_ext(dst, src);
 		// emit "change" event if anything has changed
 		if (CLIENT_SIDE) {
 			changed && self.emit('change', [src, options]);
@@ -230,17 +226,15 @@ SocketProto.update = function(changes, options) {
 		// `options.reset` means to send the whole context.
 		// falsy changes means to send the whole context
 		if (options.reset || !changes) changes = context;
-		// send serialized context to the remote end.
-		// serialize functions as well
+		// send serialized context to the remote end
 		var s = encode({
-			id: nonce(),
-			cmd: 'update',
+			//cmd: 'update',
 			//params: [changes, options]
-			params: [changes, {reset: options.reset, silent: options.ready}]
+			cmd: 'call',
+			params: ['update', changes, options]
 		});
 		// N.B. we have "insight" here of how socket.io serializes JSON ;)
 		// FIXME: this should be fixed
-console.error('SENDINGUPDATESTO', this.sessionId, s);
 		this.send('~j~' + s);
 	}
 
@@ -264,8 +258,34 @@ SocketProto.rpc = function(path /*, args...*/) {
 		cmd: 'call',
 		params: slice.call(arguments)
 	};
-console.error('SENDINGTO', this.sessionId, msg);
 	this.send(msg);
+};
+
+//
+// revive functions from THIS_IS_FUNC signatures
+//
+SocketProto.reviveFunctions = function(obj) {
+	var socket = this;
+	function revive(obj, root) {
+		// iterate over objects only
+		if (obj !== Object(obj)) return;
+		for (var prop in obj) if (has(obj, prop)) {
+			// glue the path
+			var path = root.concat([prop]);
+			// "function" signature is met?
+			if (obj[prop] === THIS_IS_FUNC) {
+				// bind RPC caller
+				obj[prop] = _.bind(socket.rpc, socket, path);
+				// veto passing this function to remote side
+				obj[prop].veto = path;//true;
+			// vanilla object
+			} else {
+				// recurse
+				revive(obj[prop], path);
+			}
+		}
+	}
+	revive(obj, []);
 };
 
 //
@@ -276,52 +296,44 @@ console.error('SENDINGTO', this.sessionId, msg);
 SocketProto.handleMessage = function(message) {
 	if (!message) return;
 console.error('MESSAGE', CLIENT_SIDE ? this.transport.sessionid : this.sessionId, message);
+	var fn;
 	// remote side calls this side method
 	if (message.cmd === 'call') {
+		// revive functions from THIS_IS_FUNC signatures
+		if (message.params && message.params[1]) {
+			this.reviveFunctions(message.params[1]);
+		}
 		// do call the method, if it's a callable indeed
 		invoke.apply(this.context, message.params);
 	// remote context has changed
 	} else if (message.cmd === 'update') {
-		this.update.apply(this, message.params);
+		var changes = message.params[0];
+		var options = message.params[1] || {};
+		// revive functions from THIS_IS_FUNC signatures
+		if (CLIENT_SIDE) {
+			this.reviveFunctions(changes);
+		}
+		// update the context
+		this.update(changes);
+		// remote context first initialized?
+		if (CLIENT_SIDE) {
+			options.ready && this.emit('ready', [this]);
+		} else {
+			options.ready && this.emit('ready', this);
+		}
 	}
 };
 
 //
 // create shared context using `this` socket as transport layer
 //
-SocketProto.createContext = function(constructor) {
+SocketProto.createContext = function() {
 	// create shared context
-	this.context = new (constructor || Context)();
+	this.context = new Context();
+	this.context.update = _.bind(this.update, this);
+	this.context.update.veto = true;
 	return this.context;
 };
-
-//
-// mark `this` socket as belonging to named `groups`
-//
-SocketProto.enter = function(groups) {
-	var sid = this.sessionId;
-	var g = this.listener.groups;
-	_.each(groups, function(group) {
-		if (!g[group]) g[group] = {};
-		g[group][sid] = this;
-	}, this);
-};
-
-//
-// mark `this` socket as not belonging to named `groups`
-//
-SocketProto.leave = function(groups) {
-	var sid = this.sessionId;
-	var g = this.listener.groups;
-	_.each(groups, function(group) {
-		if (g[group]) delete g[group][sid];
-	});
-};
-
-//
-// default shared context prototype.
-// N.B. anything put in prototype won't be shared with remote end.
-function Context() {}
 
 //
 // setup websocket communication
@@ -361,7 +373,7 @@ if (false) {
 		// attach message handler
 		socket.on('message', socket.handleMessage);
 		// create shared context
-		var context = socket.createContext(options.proto);
+		var context = socket.createContext();
 		// make connection.
 		// upon connection, context will emit 'ready' event
 		socket.connect();
@@ -388,37 +400,6 @@ if (false) {
 	var IO = require('socket.io');
 	require('./ws-patch');
 
-var ListenerProto =
-	require('socket.io/lib/socket.io/listener').prototype;
-
-//
-// invoke callable at `path` for each client of `this` socket
-// which passed `filter` test
-//
-ListenerProto.invoke = function(filter, path) {
-	var list = this.clients;
-	var args = slice.call(arguments, 1);
-	// filter the list if the filtering function is given
-	if (callable(filter)) {
-		list = _.filter(list, filter);
-	// if `filter` is array, use it as list
-	} else if (_.isArray(filter)) {
-		list = filter;
-	// else make list from `filter`
-	} else if (Object(filter) === filter) {
-		list = [filter];
-	// else treat `filter` as group name
-	} else if (typeof filter === 'string') {
-		list = this.groups[filter];
-	}
-	// return the filtered list unless arguments to make call are given
-	if (!args.length) return list;
-	// for each item in list perform RPC call
-	_.each(list, function(item) {
-		item.rpc.apply(item, args);
-	});
-};
-
 	var listen = function(server, options) {
 
 		// set default options
@@ -429,27 +410,16 @@ ListenerProto.invoke = function(filter, path) {
 
 		// start websocket listener
 		var ws = IO.listen(server, options);
-		ws.groups = {};
-		// level ground logic
+		// on client connection...
 		ws
 		.on('clientConnect', function(client) {
 			// initialize shared context
-			client.createContext(options.proto);
-			// populate groups
-			client.enter(client.context.groups);
+			client.createContext();
+			// N.B. the rest initialization is left for user code
 		})
 		.on('clientMessage', function(message, client) {
 			client.handleMessage(message);
-		})
-		.on('clientDisconnect', function(client) {
-			// depopulate groups
-			client.leave(client.context.groups);
-			// flush shared context
-			delete client.context;
 		});
-
-		// N.B. the rest of logic is left for user code.
-		// just add another listeners!
 
 		// return the listener
 		return ws;
