@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<script type="text/javascript" src="/socket.io.js"></script>
+	<script type="text/javascript" src="jquery-1.6.1.min.js"></script>
+	<script type="text/javascript" src="underscore.js"></script>
+	<script type="text/javascript">
+console.log('APPLOADED');
+var s = new io.Socket();
+s.on('connect', function() {
+});
+s.on('message', function(message) {
+	console.log('M', message);
+});
+s.on('disconnect', function() {
+});
+s.connect();
+	</script>
+</head>
+<body>
+<a href='auth'>Auth</a>
+<a href='#' onclick="for (var i in count) count[i] = 0;">Clear</a>
+<table>
+<thead>
+<th>s1</th><th>s2</th><th>s3</th><th>s4</th><th>
+</thead>
+<tbody>
+<tr>
+<td><ol id="l1"></ul></td>
+<td><ol id="l2"></ul></td>
+<td><ol id="l3"></ul></td>
+<td><ol id="l4"></ul></td>
+</tr>
+</tbody>
+</table>
+</body>
+</html>
