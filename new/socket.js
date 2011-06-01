@@ -247,12 +247,12 @@
   })();
 
   util.request = function (xdomain) {
+return new XMLHttpRequest(); //DVV
     if (window.XDomainRequest && xdomain) {
       return new XDomainRequest();
     };
 
     if (window.XMLHTTPRequest && (!xdomain || hasCORS)) {
-      return new XMLHttpRequest();
     }
 
     if (!xdomain){
@@ -1521,8 +1521,10 @@
    */
 
   XHR.prototype.request = function (method) {
-    var req = io.util.request(this.base.isXDomain());
-    req.open(method || 'GET', this.prepareUrl() + '?t' + (new Date));
+//DVV    var req = io.util.request(this.base.isXDomain());
+//DVV    req.open(method || 'GET', this.prepareUrl() + '?t' + (new Date));
+    var req = io.util.request();
+    req.open(method || 'GET', this.prepareUrl() + '?t' + +(new Date));
 
     if (method == 'POST') {
       if (req.setRequestHeader) {
@@ -1694,207 +1696,6 @@
    * Expose constructor.
    */
 
-  exports['jsonp-polling'] = JSONPPolling;
-
-  /**
-   * The JSONP transport creates an persistent connection by dynamically
-   * inserting a script tag in the page. This script tag will receive the
-   * information of the Socket.IO server. When new information is received
-   * it creates a new script tag for the new data stream.
-   *
-   * @constructor
-   * @extends {io.Transport.xhr-polling}
-   * @api public
-   */
-
-  function JSONPPolling (socket) {
-    if (!socket) return;
-
-    io.Transport['xhr-polling'].apply(this, arguments);
-    this.insertAt = document.getElementsByTagName('script')[0];
-    this.index = io.j.length;
-
-    var self = this;
-
-    io.j.push(function (msg) {
-      self._(msg);
-    });
-  };
-
-  /**
-   * Inherits from XHR polling transport.
-   */
-
-  io.util.inherit(JSONPPolling, io.Transport['xhr-polling']);
-
-  /**
-   * The transport type, you use this to identify which transport was chosen.
-   *
-   * @type {String}
-   * @api public
-   */
-
-  JSONPPolling.prototype.name = 'jsonp-polling';
-
-  /**
-   * Posts a encoded message to the Socket.IO server using an iframe.
-   * The iframe is used because script tags can create POST based requests.
-   * The iframe is positioned outside of the view so the user does not
-   * notice it's existence.
-   *
-   * @param {String} data A encoded message.
-   * @api private
-   */
-
-  JSONPPolling.prototype.post = function (data) {
-    var self = this;
-
-    if (!this.form) {
-      var form = document.createElement('FORM')
-        , area = document.createElement('TEXTAREA')
-        , id = this.iframeId = 'socketio_iframe_' + this.index
-        , iframe;
-  
-      form.className = 'socketio';
-      form.style.position = 'absolute';
-      form.style.top = '-1000px';
-      form.style.left = '-1000px';
-      form.target = id;
-      form.method = 'POST';
-      form.action = this.prepareUrl() + '?t=' + (+new Date) + '&i=' + this.index;
-      area.name = 'data';
-      form.appendChild(area);
-      this.insertAt.parentNode.insertBefore(form, this.insertAt);
-      document.body.appendChild(form);
-
-      this.form = form;
-      this.area = area;
-    }
-
-    function complete () {
-      initIframe();
-      self.posting = false;
-      self.checkSend();
-    };
-
-    function initIframe () {
-      if (self.iframe) {
-        self.form.removeChild(self.iframe);
-      }
-
-      try {
-        // ie6 dynamic iframes with target="" support (thanks Chris Lambacher)
-        iframe = document.createElement('<iframe name="'+ self.iframeId +'">');
-      } catch (e) {
-        iframe = document.createElement('iframe');
-        iframe.name = self.iframeId;
-      }
-
-      iframe.id = self.iframeId;
-
-      self.form.appendChild(iframe);
-      self.iframe = iframe;
-    };
-
-    initIframe();
-
-    this.posting = true;
-    this.area.value = data;
-
-    try {
-      this.form.submit();
-    } catch(e) {}
-
-    if (this.iframe.attachEvent) {
-      iframe.onreadystatechange = function () {
-        if (self.iframe.readyState == 'complete') {
-          complete();
-        }
-      };
-    } else {
-      this.iframe.onload = complete;
-    }
-  };
-  
-  /**
-   * Creates a new JSONP poll that can be used to listen
-   * for messages from the Socket.IO server.
-   *
-   * @api private
-   */
-
-  JSONPPolling.prototype.get = function () {
-    var self = this
-      , script = document.createElement('SCRIPT');
-
-    if (this.script) {
-      this.script.parentNode.removeChild(this.script);
-      this.script = null;
-    }
-
-    script.async = true;
-    script.src = this.prepareUrl() + '/?t=' + (+new Date) + '&i=' + this.index;
-    script.onerror = function(){
-      self.onClose();
-    };
-
-    this.insertAt.parentNode.insertBefore(script, this.insertAt);
-    this.script = script;
-  };
-
-  /**
-   * Callback function for the incoming message stream from the Socket.IO server.
-   *
-   * @param {String} data The message
-   * @api private
-   */
-
-  JSONPPolling.prototype._ = function (msg) {
-    this.onData(msg);
-    this.get();
-    return this;
-  };
-
-  /**
-   * Checks if browser supports this transport.
-   *
-   * @return {Boolean}
-   * @api public
-   */
-
-  JSONPPolling.check = function () {
-    return true;
-  };
-
-  /**
-   * Check if cross domain requests are supported
-   *
-   * @returns {Boolean}
-   * @api public
-   */
-
-  JSONPPolling.xdomainCheck = function () {
-    return true;
-  };
-
-})(
-    'undefined' != typeof io ? io.Transport : module.exports
-  , 'undefined' != typeof io ? io : module.parent.exports
-);
-
-
-/**
- * socket.io
- * Copyright(c) 2011 LearnBoost <dev@learnboost.com>
- * MIT Licensed
- */
-
-(function (exports, io) {
-
-  /**
-   * Expose constructor.
-   */
-
   exports.websocket = WS;
 
   /**
@@ -2019,179 +1820,6 @@
 
   WS.xdomainCheck = function(){
     return true;
-  };
-
-})(
-    'undefined' != typeof io ? io.Transport : module.exports
-  , 'undefined' != typeof io ? io : module.parent.exports
-);
-
-
-/**
- * socket.io
- * Copyright(c) 2011 LearnBoost <dev@learnboost.com>
- * MIT Licensed
- */
-
-(function (exports, io) {
-
-  /**
-   * Expose constructor.
-   */
-
-  exports.htmlfile = HTMLFile;
-
-  /**
-   * The HTMLFile transport creates a `forever iframe` based transport
-   * for Internet Explorer. Regular forever iframe implementations will 
-   * continuously trigger the browsers buzy indicators. If the forever iframe
-   * is created inside a `htmlfile` these indicators will not be trigged.
-   *
-   * @constructor
-   * @extends {io.Transport.XHR}
-   * @api public
-   */
-
-  function HTMLFile (socket) {
-    io.Transport.XHR.apply(this, arguments);
-  };
-
-  /**
-   * Inherits from XHR transport.
-   */
-
-  io.util.inherit(HTMLFile, io.Transport.XHR);
-
-  /**
-   * The transport type, you use this to identify which transport was chosen.
-   *
-   * @type {String}
-   * @api public
-   */
-
-  HTMLFile.prototype.name = 'htmlfile';
-
-  /**
-   * Starts the HTMLFile data stream for incoming messages. And registers a
-   * onunload event listener so the HTMLFile will be destroyed.
-   *
-   * @api private
-   */
-
-  HTMLFile.prototype.get = function () {
-    var self = this;
-
-    this.open();
-
-    window.attachEvent('onunload', function () {
-      self.destroy();
-    });
-  };
-
-  /**
-   * Creates a new ActiveX `htmlfile` with a forever loading iframe
-   * that can be used to listen to messages. Inside the generated
-   * `htmlfile` a reference will be made to the HTMLFile transport.
-   *
-   * @api private
-   */
-
-  HTMLFile.prototype.open = function () {
-    this.doc = new ActiveXObject('htmlfile');
-    this.doc.open();
-    this.doc.write('<html></html>');
-    this.doc.parentWindow.s = this;
-    this.doc.close();
-
-    var iframeC = this.doc.createElement('div');
-    iframeC.className = 'socketio';
-
-    this.doc.body.appendChild(iframeC);
-    this.iframe = this.doc.createElement('iframe');
-
-    iframeC.appendChild(this.iframe);
-
-    this.iframe.src = this.prepareUrl() + '/?t=' + (+ new Date);
-    this.onOpen();
-  };
-
-  /**
-   * The Socket.IO server will write script tags inside the forever
-   * iframe, this function will be used as callback for the incoming
-   * information.
-   *
-   * @param {String} data The message
-   * @param {document} doc Reference to the context
-   * @api private
-   */
-
-  HTMLFile.prototype._ = function (data, doc) {
-    this.onData(data);
-    var script = doc.getElementsByTagName('script')[0];
-    script.parentNode.removeChild(script);
-  };
-
-  /**
-   * Destroy the established connection, iframe and `htmlfile`.
-   * And calls the `CollectGarbage` function of Internet Explorer
-   * to release the memory.
-   *
-   * @api private
-   */
-
-  HTMLFile.prototype.destroy = function () {
-    if (this.iframe){
-      try {
-        this.iframe.src = 'about:blank';
-      } catch(e){}
-
-      this.doc = null;
-
-      CollectGarbage();
-    }
-  };
-
-  /**
-   * Disconnects the established connection.
-   *
-   * @returns {Transport} Chaining.
-   * @api public
-   */
-
-  HTMLFile.prototype.close = function () {
-    this.destroy();
-    return io.Transport.XHR.prototype.close.call(this);
-  };
-
-  /**
-   * Checks if the browser supports this transport. The browser
-   * must have an `ActiveXObject` implementation.
-   *
-   * @return {Boolean}
-   * @api public
-   */
-
-  HTMLFile.check = function () {
-    if ('ActiveXObject' in window){
-      try {
-        var a = new ActiveXObject('htmlfile');
-        return a && io.Transport.XHR.check();
-      } catch(e){}
-    }
-    return false;
-  };
-
-  /**
-   * Check if cross domain requests are supported.
-   *
-   * @returns {Boolean}
-   * @api public
-   */
-
-  HTMLFile.xdomainCheck = function () {
-    // we can probably do handling for sub-domains, we should
-    // test that it's cross domain but a subdomain here
-    return false;
   };
 
 })(
@@ -2470,8 +2098,8 @@
       script.src = url + '&jsonp=' + io.j.length;
       insertAt.parentNode.insertBefore(script, insertAt);
 
-      io.j.push(function () {
-        complete();
+      io.j.push(function (response) {
+        complete(response);
         script.parentNode.removeChild(script);
       });
     } else {
@@ -2532,6 +2160,7 @@
       self.sessionid = sid;
       self.closeTimeout = close;
       self.heartbeatTimeout = heartbeat;
+transports = transports.split(',');//DVV
       self.transports = io.util.intersect(transports, self.options.transports);
       self.transport = self.getTransport();
 
@@ -2542,6 +2171,7 @@
       self.connecting = true;
       self.emit('connecting', self.transport.name);
 
+//DVV: WS has no .open()
       self.transport.open();
 
       if (self.options.connectTimeout) {
@@ -2631,7 +2261,10 @@
 
   Socket.prototype.isXDomain = function () {
     var locPort = window.location.port || 80;
-    return this.host !== document.domain || this.options.port != locPort;
+    //return this.host !== document.domain || this.options.port != locPort;
+    var r = this.host !== document.domain || this.options.port != locPort;
+console.log('XDOM', r);
+return r;
   };
 
   /**
