@@ -2,18 +2,24 @@
 <html>
 <head>
 	<meta charset="utf-8">
-	<script type="text/javascript" src="/socket.io.js"></script>
+	<script type="text/javascript" src="socket.io/socket.io.js"></script>
+	<!--script type="text/javascript" src="socket.io.js"></script-->
 	<script type="text/javascript" src="jquery-1.6.1.min.js"></script>
 	<script type="text/javascript" src="underscore.js"></script>
 	<script type="text/javascript">
 console.log('APPLOADED');
-var s = new io.Socket();
+io.transports = ['websocket', 'xhr-polling'];
+var s = new io.Socket(null, {
+	rememberTransport: false
+});
 s.on('connect', function() {
+	console.log('CONNECT');
 });
 s.on('message', function(message) {
-	console.log('M', message);
+	console.log('MESSAGE', message);
 });
 s.on('disconnect', function() {
+	console.log('DISCONNECT');
 });
 s.connect();
 	</script>

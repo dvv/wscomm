@@ -52,8 +52,10 @@ var ws = IO.listen(http1, {
 	transports: ['websocket', 'xhr-polling'],
 	//log: false
 });
+console.log(ws);
 ws.sockets.on('connection', function(client) {
 
+	console.log('CLIENT', client);
 	ws.sockets.emit('this', { will: 'be received by everyone' });
 	client.on('private message', function(from, msg) {
 		console.log('I received a private message by ', from, ' saying ', msg);
