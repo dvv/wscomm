@@ -48,7 +48,7 @@
           break;
 
 //DVV: CATCHALL
-console.log('CATCHALL', ev, args, this);
+console.log('DVV:CATCHALL', ev, args, this);
 
       return true;
     },
@@ -77,9 +77,6 @@ console.log('CATCHALL', ev, args, this);
       return this;
     }
   };
-  Events.on = Events.bind;
-  Events.emit = Events.trigger;
-  Events.un = Events.unbind;
   
   var Log = Spine.Log = {
     trace: true,

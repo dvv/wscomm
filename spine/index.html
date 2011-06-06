@@ -2,42 +2,29 @@
 <html>
 <head>
 	<meta charset="utf-8">
-	<script type="text/javascript" src="socket.js"></script>
-	<script type="text/javascript" src="jquery-1.6.1.min.js"></script>
-	<!--script type="text/javascript" src="json2.js"></script-->
-	<!--script type="text/javascript" src="es5-shim.js"></script-->
-	<!--script type="text/javascript" src="spine.js"></script-->
-	<!--script type="text/javascript" src="spine.model.local.js"></script-->
-	<script type="text/javascript">
-		console.log('APPLOADED');
-//var Foo = Spine.Model.setup('Foo', ['foo', 'bar']);
-//Foo.extend(Spine.Model.Local);
-var s = new io.Socket({
-	host: 'localhost', port: 3000,
-	'auto connect': false,
-	transports: ['websocket']
-	//transports: ['xhr-polling']
-});
-s.connect(function() {
-	console.log('CONNECTED', arguments, this);
-});
-	</script>
+	<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+	<title></title>
+	<meta name="description" content="">
+	<meta name="author" content="">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="stylesheet" href="css/main.css">
+	<link rel="stylesheet" href="css/960.css">
+	<link rel="stylesheet" href="css/style.css">
+	<script type="text/javascript" src="js/modernizr.js" charset="utf-8"></script>
 </head>
-<body>
-<a href='auth'>Auth</a>
-<a href='#' onclick="for (var i in count) count[i] = 0;">Clear</a>
-<table>
-<thead>
-<th>s1</th><th>s2</th><th>s3</th><th>s4</th><th>
-</thead>
-<tbody>
-<tr>
-<td><ol id="l1"></ul></td>
-<td><ol id="l2"></ul></td>
-<td><ol id="l3"></ul></td>
-<td><ol id="l4"></ul></td>
-</tr>
-</tbody>
-</table>
+<body class="container_16 clearfix <!--[if lt IE 7 ]>ie6<![endif]--> <!--[if IE 7 ]>ie7<![endif]--> <!--[if IE 8 ]>ie8<![endif]-->">
+	<a href="auth">Fake auth to toggle sid cookie</a>
+	<header id="header" class="container_16 clearfix">HEADER</header>
+	<nav id="nav" class="container_16 clearfix">NAVIGATION</nav>
+	<div id="content" class="container_16 clearfix"><!-- static authentication stuff here -->CONTENT</div>
+	<footer id="footer" class="container_16 clearfix">FOOTER</footer>
+	<!-- N.B. don't optimize prematurely. just please don't! -->
+	<script type="text/javascript" src="js/json2.js" charset="utf-8"></script>
+	<script type="text/javascript" src="js/es5-shim.js" charset="utf-8"></script>
+	<script type="text/javascript" src="js/jquery-1.6.1.min.js" charset="utf-8"></script>
+	<script type="text/javascript" src="js/spine.js" charset="utf-8"></script>
+	<script type="text/javascript" src="js/spine.route.js" charset="utf-8"></script>
+	<script type="text/javascript" src="js/spine.model.local.js" charset="utf-8"></script>
+	<script type="text/javascript" src="js/app.js" charset="utf-8"></script>
 </body>
 </html>

@@ -1,1 +1,0 @@
-/home/dvv/node_modules/spine/lib/spine.model.local.js
