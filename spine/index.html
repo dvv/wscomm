@@ -4,18 +4,19 @@
 	<meta charset="utf-8">
 	<script type="text/javascript" src="socket.js"></script>
 	<script type="text/javascript" src="jquery-1.6.1.min.js"></script>
-	<script type="text/javascript" src="json2.js"></script>
-	<script type="text/javascript" src="es5-shim.js"></script>
-	<script type="text/javascript" src="spine.js"></script>
-	<script type="text/javascript" src="spine.model.local.js"></script>
+	<!--script type="text/javascript" src="json2.js"></script-->
+	<!--script type="text/javascript" src="es5-shim.js"></script-->
+	<!--script type="text/javascript" src="spine.js"></script-->
+	<!--script type="text/javascript" src="spine.model.local.js"></script-->
 	<script type="text/javascript">
 		console.log('APPLOADED');
 //var Foo = Spine.Model.setup('Foo', ['foo', 'bar']);
 //Foo.extend(Spine.Model.Local);
 var s = new io.Socket({
 	host: 'localhost', port: 3000,
-	//transports: ['websocket']
-	transports: ['xhr-polling']
+	'auto connect': false,
+	transports: ['websocket']
+	//transports: ['xhr-polling']
 });
 s.connect(function() {
 	console.log('CONNECTED', arguments, this);

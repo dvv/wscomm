@@ -78,5 +78,8 @@ ws.sockets.on('connection', function(client) {
 
 });
 
-require('repl').start('node> ').context.ws = ws;
+var repl = require('repl').start('node> ').context;
+repl.ws = ws;
+repl.c = function(){return ws.sockets.sockets[Object.keys(ws.sockets.sockets)[0]];};
+
 process.stdin.on('close', process.exit);
