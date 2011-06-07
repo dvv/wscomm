@@ -2,6 +2,10 @@
 
 ///----------------------
 
+if (!window.console) console = {log: alert};
+
+///----------------------
+
 $.extend(doT.templateSettings, {
 	evaluate: /<\?([\s\S]+?)\?>/g,
 	interpolate: /<\?-([\s\S]+?)\?>/g,
@@ -11,7 +15,8 @@ var template = doT.template;
 
 ///----------------------
 
-alert($('body')[0].className);
+//$('body').data({foo:'bar'});
+//alert($('body').data());
 
 //console.log('APPLOADED');
 Spine.Events.debug = true;
@@ -40,10 +45,10 @@ var App = Spine.Controller.create({
 		this.routes({
 			'/users/:id': function(id) {
 				// Activate controller or something
-				console.log('/users/', id)
+				console && console.log('/users/', id)
 			},
 			'profile': runProfile = function() {
-				console.log('SHOULD DISPLAY PROFILE IN #content', this, this.body)
+				console && console.log('SHOULD DISPLAY PROFILE IN #content', this, this.body)
 			}
 		});
 		//

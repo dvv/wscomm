@@ -43,7 +43,7 @@ if (typeof window === 'undefined') {
 } else {
 	var Spine = this.Spine;
 	var Persist = Spine.Model.Local;
-	Spine.Model.Local.storage = sessionStorage;
+	Spine.Model.Local.storage = this.sessionStorage;
 	Spine.Model.extend({
 		url: function() { return '/' + this.name; }
 	});
