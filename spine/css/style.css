@@ -1,3 +1,14 @@
 #header, #nav, #content, #footer {
 	border: 1px solid red;
 }
+
+#content > *:not(.active) {
+  display: none !important;
+}
+
+#users {
+	background-color: red;
+}
+#groups {
+	background-color: navy;
+}

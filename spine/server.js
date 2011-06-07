@@ -1,19 +1,33 @@
-var Connect = require('connect');
-var Session = require('cookie-sessions');
+'use strict';
+
+var model = require('./js/model.js');
+
 
 /**
  * HTTP middleware
  */
 
+var Connect = require('connect');
 var sessionHandler;
 var stack = [
 	Connect.favicon(),
 	Connect.static(__dirname),
-	sessionHandler = Session({
+	sessionHandler = require('cookie-sessions')({
 		session_key: 'sid',
 		secret: 'change-me-in-production-env',
 		path: '/',
 		timeout: 86400000
+	}),
+	require('./lib/body')(),
+	require('./lib/rest')('/', {
+		context: {
+			Foo: {
+				query: function(ctx, query, next) {
+					console.log('QRY', arguments);
+					next(null, [{}]);
+				}
+			}
+		}
 	}),
 	auth()
 ];
@@ -55,3 +69,6 @@ function auth(url) {
 
 var http = Connect.apply(Connect, stack);
 http.listen(3000);
+
+//var Spine = require('spine');
+require('repl').start('node> ').context.app = model;

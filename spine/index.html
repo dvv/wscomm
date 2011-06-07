@@ -12,19 +12,32 @@
 	<link rel="stylesheet" href="css/style.css">
 	<script type="text/javascript" src="js/modernizr.js" charset="utf-8"></script>
 </head>
-<body class="container_16 clearfix <!--[if lt IE 7 ]>ie6<![endif]--> <!--[if IE 7 ]>ie7<![endif]--> <!--[if IE 8 ]>ie8<![endif]-->">
-	<a href="auth">Fake auth to toggle sid cookie</a>
-	<header id="header" class="container_16 clearfix">HEADER</header>
+<!--[if lt IE 7 ]><body class="container_16 clearfix ie6"><![endif]-->
+<!--[if IE 7 ]><body class="container_16 clearfix ie7"><![endif]-->
+<!--[if IE 8 ]><body class="container_16 clearfix ie8"><![endif]-->
+<!--[if (gte IE 9)|!(IE)]><body class="container_16 clearfix"><![endif]-->
+	<header id="header" class="container_16 clearfix">HEADER: <a href="auth">Fake auth to toggle sid cookie</a></header>
 	<nav id="nav" class="container_16 clearfix">NAVIGATION</nav>
-	<div id="content" class="container_16 clearfix"><!-- static authentication stuff here -->CONTENT</div>
+	<div id="content" class="container_16 clearfix"><!-- static authentication stuff here -->CONTENT
+		<div id="users">
+			<div class="form"></div>
+			<div class="list"><ol></ol></div>
+		</div>
+		<div id="groups">GROUPS</div>
+	</div>
 	<footer id="footer" class="container_16 clearfix">FOOTER</footer>
 	<!-- N.B. don't optimize prematurely. just please don't! -->
 	<script type="text/javascript" src="js/json2.js" charset="utf-8"></script>
 	<script type="text/javascript" src="js/es5-shim.js" charset="utf-8"></script>
 	<script type="text/javascript" src="js/jquery-1.6.1.min.js" charset="utf-8"></script>
+	<script type="text/javascript" src="js/doT.js" charset="utf-8"></script>
 	<script type="text/javascript" src="js/spine.js" charset="utf-8"></script>
+	<script type="text/javascript" src="js/spine.local.js" charset="utf-8"></script>
+	<script type="text/javascript" src="js/spine.ajax.js" charset="utf-8"></script>
 	<script type="text/javascript" src="js/spine.route.js" charset="utf-8"></script>
-	<script type="text/javascript" src="js/spine.model.local.js" charset="utf-8"></script>
+	<script type="text/javascript" src="js/spine.manager.js" charset="utf-8"></script>
+	<script type="text/javascript" src="js/spine.list.js" charset="utf-8"></script>
+	<script type="text/javascript" src="js/model.js" charset="utf-8"></script>
 	<script type="text/javascript" src="js/app.js" charset="utf-8"></script>
 </body>
 </html>
