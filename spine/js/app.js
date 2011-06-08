@@ -95,3 +95,27 @@ users.active();
 
 // let the history begin
 Spine.Route.setup();
+
+// socket
+var s = new io.Socket({
+	host: 'localhost',
+	port: 3000,
+	transports: ['websocket'],
+	'auto connect': false
+});
+s.on('connect', function() {
+	console.log('CONNECT');
+});
+s.on('disconnect', function() {
+	console.log('DISCONNECT');
+});
+s.on('reconnect', function() {
+	console.log('RECONNECT');
+});
+s.on('message', function() {
+	console.log('MESSAGE', arguments);
+});
+s.on('event', function() {
+	console.log('EVENT', arguments);
+});
+s.connect();

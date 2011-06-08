@@ -50,7 +50,8 @@ var http1 = Connect.apply(Connect, stack);
 http1.listen(3000);
 
 var ws = IO.listen(http1);
-ws.set('transports', ['xhr-polling', 'websocket']);
+//ws.set('transports', ['xhr-polling', 'websocket']);
+ws.set('transports', ['websocket']);
 // reuse cookie session middleware
 ws.set('authorization', function(data, next) {
 	sessionHandler(data.request, {}, function() {

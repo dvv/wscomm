@@ -7,6 +7,7 @@
 	<script type="text/javascript" src="jquery-1.6.1.js"></script>
 	<script type="text/javascript" src="underscore.js"></script>
 	<script type="text/javascript">
+function dump(dummy) { console.log('DUMP', arguments); }
 console.log('APPLOADED');
 //io.transports = ['websocket', 'xhr-polling'];
 var s = new io.Socket({
@@ -14,16 +15,16 @@ var s = new io.Socket({
 	port: 3000,
 	secure: false,
 	//transports: ['websocket', 'xhr-polling']
-	transports: ['xhr-polling']
-	//transports: ['websocket'],
-//	'auto connect': false
+	//transports: ['xhr-polling'],
+	transports: ['websocket'],
+	//'auto connect': false,
 });
 s.of('/news').on('item', function() {
 	console.log('NEWSITEM!', arguments);
 });
-s.of('/news').on('connect', function() {
+/*s.of('/news').on('connect', function() {
 	console.log('NEWSCONNECT');
-});
+});*/
 s.on('connect', function() {
 	console.log('CONNECT');
 });
