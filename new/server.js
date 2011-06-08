@@ -49,10 +49,8 @@ function auth(url) {
 var http1 = Connect.apply(Connect, stack);
 http1.listen(3000);
 
-var ws = IO.listen(http1, {
-	transports: ['xhr-polling'],
-	//log: false
-});
+var ws = IO.listen(http1);
+ws.set('transports', ['xhr-polling', 'websocket']);
 // reuse cookie session middleware
 ws.set('authorization', function(data, next) {
 	sessionHandler(data.request, {}, function() {
@@ -72,11 +70,32 @@ ws.sockets.on('connection', function(client) {
 	client.on('message', function() {
 		console.log('I received a message', arguments);
 	});
+	client.on('event', function() {
+		console.log('EVENT', arguments);
+	});
+	client.on('ferret', function(name, fn) {
+		console.log('FERRET', arguments);
+		fn && fn('woot');
+	});
+	client.on('foo', function() {
+		console.log('FOO', arguments);
+	});
 	client.on('disconnect', function() {
 		ws.sockets.emit('user disconnected');
 	});
 
 });
 
+ws.for('/news').on('connection', function(client) {
+	console.log('NEWSSUB');
+	client.emit('item', { news: 'item' });
+});
+
 require('repl').start('node> ').context.ws = ws;
+ws.m = function() { this.sockets.json.send({a:['foo',1,2,3]}); };
+ws.s1 = function() { this.sockets.emit('foo',1,2,3); };
+ws.s = function() { return this.sockets.sockets[Object.keys(this.sockets.sockets)[0]]; };
+ws.c = function() { this.sockets.sockets[Object.keys(this.sockets.sockets)[0]].broadcast.emit('foo',1,2,3); };
+ws.f = function() { this.sockets.sockets[Object.keys(this.sockets.sockets)[0]].emit('foo',1,2,3,function(aaa){console.log('ANSWER', arguments)}); };
+ws.f0 = function() { this.sockets.sockets[Object.keys(this.sockets.sockets)[0]].broadcast.emit('foo',1,2,3); };
 process.stdin.on('close', process.exit);

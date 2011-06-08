@@ -15,20 +15,38 @@ var s = new io.Socket({
 	secure: false,
 	//transports: ['websocket', 'xhr-polling']
 	transports: ['xhr-polling']
+	//transports: ['websocket'],
+//	'auto connect': false
+});
+s.of('/news').on('item', function() {
+	console.log('NEWSITEM!', arguments);
+});
+s.of('/news').on('connect', function() {
+	console.log('NEWSCONNECT');
 });
 s.on('connect', function() {
 	console.log('CONNECT');
 });
-s.on('message', function(message) {
+s.on('connect_failed', function() {
+	console.log('CONNECT FAILED. SORRY');
+});
+s.of('').on('message', function(message) {
 	console.log('MESSAGE', message);
 });
-s.on('event', function() {
+s.of('/news').on('message', function(message) {
+	console.log('NEWSMESSAGE', message);
+});
+s.of('').on('event', function() {
 	console.log('EVENT', arguments);
+});
+s.of('').on('foo', function(a, b, c, fn) {
+	console.log('FOO', arguments);
+	if (typeof fn === 'function') fn('FOOd');
 });
 s.on('disconnect', function() {
 	console.log('DISCONNECT');
 });
-s.connect();
+//s.connect();
 	</script>
 </head>
 <body>

@@ -1,1 +1,1 @@
-/home/dvv/node_modules/Socket.IO-node/lib/client/socket.io.js
+/home/dvv/node_modules/Socket.IO/dist/socket.io.js
