@@ -123,4 +123,3 @@ s.on('message', function() {
 s.on('eventname', function() {
 	console.log('EVENT:eventname', arguments);
 });
-s.connect();

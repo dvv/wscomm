@@ -211,6 +211,10 @@ console.log('EXTENDED', context, changes);
 		// send serialized context to the remote end.
 		// serialize functions as well
 		// FIXME: functions not serialized!!!
+console.log('EMITTING UPDATE', changes, {
+			reset: options.reset,
+			silent: options.ready
+		});
 		(this.of ? this.of('') : this).emit('update', changes, {
 			reset: options.reset,
 			silent: options.ready
@@ -284,7 +288,8 @@ if (!io.Manager) {
 			port: location.port,
 			secure: location.protocol === 'https:',
 			transports: ['websocket', 'xhr-polling'],
-			'auto connect': false
+			'auto connect': false,
+			reconnect: false
 		}, options || {});
 		// create socket
 		var socket = new io.Socket(options);
