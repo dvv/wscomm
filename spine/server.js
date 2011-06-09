@@ -1,25 +1,31 @@
 'use strict';
 
-var model = require('./js/model.js');
+var model = require('./public/js/model.js');
 
 
 /**
  * HTTP middleware
  */
 
-var Connect = require('connect');
+var Stack = require('./lib');
 var sessionHandler;
 var stack = [
-	Connect.favicon(),
-	Connect.static(__dirname),
+	// serve static content
+	Stack.static(__dirname + '/public', 'index.html', {
+		maxAge: 0,
+		//cacheThreshold: 16384
+	}),
+	// dynamic content requires session
 	sessionHandler = require('cookie-sessions')({
 		session_key: 'sid',
 		secret: 'change-me-in-production-env',
 		path: '/',
 		timeout: 86400000
 	}),
-	require('./lib/body')(),
-	require('./lib/rest')('/', {
+	// process request body
+	Stack.body(),
+	// process RESTful access
+	Stack.rest('/', {
 		context: {
 			Foo: {
 				query: function(ctx, query, next) {
@@ -29,7 +35,8 @@ var stack = [
 			}
 		}
 	}),
-	auth()
+	// handle signin/signout
+	auth(),
 ];
 
 /**
@@ -67,23 +74,22 @@ function auth(url) {
 
 }
 
-var http = Connect.apply(Connect, stack);
-http.listen(3000);
-
-var IO = require('Socket.IO-node');
-var ws = IO.listen(http, {
-	//transports: ['xhr-polling'],
+var http = Stack.listen(stack, 3000);
+var io = require('./lib/wscomm');
+console.log(io);
+var ws = io.WSComm(http, {
+	// we support only these transports
 	transports: ['websocket'],
-	//log: false
-});
-// reuse cookie session middleware
-ws.set('authorization', function(data, next) {
-	sessionHandler(data.request, {}, function() {
-		console.log('SESSION', data.request.session);
-		next(null, data.request.session);
-	});
+	// reuse cookie session middleware
+	authorization: function(data, next) {
+		sessionHandler(data.request, {}, function() {
+			console.log('SESSION', data.request.session);
+			next(null, data.request.session);
+		});
+	}
 });
 
+/*
 //console.log(ws);
 ws.sockets.on('connection', function(client) {
 
@@ -106,12 +112,12 @@ ws.sockets.on('connection', function(client) {
 	});
 
 });
+*/
 
-
-//var Spine = require('spine');
 var repl = require('repl').start('node> ').context;
 repl.app = model;
 repl.ws = ws;
 repl.c = function(){return ws.sockets.sockets[Object.keys(ws.sockets.sockets)[0]];};
+repl.d = function(){return ws.sockets.sockets[Object.keys(ws.sockets.sockets)[1]];};
 repl.s = function(){repl.c().json.send({a:1,b:new Date()});};
 process.stdin.on('close', process.exit);

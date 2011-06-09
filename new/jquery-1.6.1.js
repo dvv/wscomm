@@ -7737,7 +7737,6 @@ var // #5280: Internet Explorer will keep connections alive if we don't abort on
 // Functions to create xhrs
 function createStandardXHR() {
 	try {
-console.log('HERE', new window.XMLHttpRequest());
 		return new window.XMLHttpRequest();
 	} catch( e ) {}
 }

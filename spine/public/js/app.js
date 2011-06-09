@@ -15,6 +15,7 @@ var template = doT.template;
 
 ///----------------------
 
+//alert($('html')[0].className);
 //$('body').data({foo:'bar'});
 //alert($('body').data());
 
@@ -91,7 +92,10 @@ var groups = Spine.Controller.create({
 	el: '#groups'
 }).init();
 Spine.Manager.init(users, groups);
-users.active();
+var tabs = Spine.Tabs.init({el: $("#nav ul.tabs")});
+tabs.connect('users', users);
+tabs.connect('groups', groups);
+tabs.render();
 
 // let the history begin
 Spine.Route.setup();
@@ -103,6 +107,7 @@ var s = new io.Socket({
 	transports: ['websocket'],
 	'auto connect': false
 });
+var s = new io.WSComm({});
 s.on('connect', function() {
 	console.log('CONNECT');
 });
@@ -115,7 +120,7 @@ s.on('reconnect', function() {
 s.on('message', function() {
 	console.log('MESSAGE', arguments);
 });
-s.on('event', function() {
-	console.log('EVENT', arguments);
+s.on('eventname', function() {
+	console.log('EVENT:eventname', arguments);
 });
 s.connect();
