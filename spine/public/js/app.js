@@ -100,6 +100,9 @@ tabs.render();
 // let the history begin
 Spine.Route.setup();
 
+// load model
+Foo.fetch();
+
 // socket
 var s = new io.Socket({
 	host: 'localhost',

@@ -5,11 +5,6 @@
  *
  */
 
-//
-// N.B. depends on underscore.js to normalize client side JS engines.
-// we recommend you to look at ender.js to pack microlibs
-//
-
 (function(io, undefined) {
 'use strict';
 
@@ -74,6 +69,9 @@ function nonce() {
 	return (Date.now() & 0x7fff).toString(36) + rnd() + rnd() + rnd();
 }
 
+//
+// debugging helper
+//
 function dump() {
 	console.log('DUMP', arguments);
 }
@@ -102,6 +100,7 @@ function drill(obj, path) {
 // optional parameters
 //
 function invoke(path /*, args... */) {
+console.log('INVOKE', arguments);
 	var fn = drill(this, path);
 	callable(fn) && fn.apply(this, slice.call(arguments, 1));
 }
@@ -118,12 +117,20 @@ var THIS_IS_FUNC = '~-=(){}=-~';
 
 var SocketProto = io.Socket.prototype;
 
+SocketProto.emitter = (this.of ? this.of('') : this).emit;
+
+/***
+
+
+***/
+
 //
 // update this object with `changes`, firing 'change' events.
 // if `options.reset` is truthy, remove all properties first.
 // if `options.silent` is truthy, inhibit firing 'change' events
 //
 SocketProto.update = function(changes, options, callback) {
+console.log('INUPDATE', arguments);
 	if (!options) options = {};
 	var self = this;
 	var context = this.context;
@@ -164,7 +171,7 @@ SocketProto.update = function(changes, options, callback) {
 				// value is a THIS_IS_FUNC signature? make live function
 				if (v === THIS_IS_FUNC) {
 					// bind RPC caller
-					v = self.rpc.bind(self, path);
+					v = self.emitter.bind(self, 'invoke', path);
 					// veto passing this function to remote side
 					v.veto = path;
 				}
@@ -215,7 +222,7 @@ console.log('EMITTING UPDATE', changes, {
 			reset: options.reset,
 			silent: options.ready
 		});
-		(this.of ? this.of('') : this).emit('update', changes, {
+		this.emitter('update', changes, {
 			reset: options.reset,
 			silent: options.ready
 		});
@@ -235,23 +242,23 @@ console.log('EMITTING UPDATE', changes, {
 // invoke a remote function by `path`
 //
 SocketProto.rpc = function(path /*, args...*/) {
-	(this.of ? this.of('') : this).emit('invoke', slice.call(arguments));
+	this.emitter('invoke', slice.call(arguments));
 };
 
 //
 // update event arrived
 //
 SocketProto.onUpdate = function(changes, options, callback) {
-console.error('ONUPDATE', this.sessionid, changes, options);
+console.error('ONUPDATE', this.id, changes, options);
 	this.update.apply(this, arguments);
 };
 
 //
 // invoke event arrived
 //
-SocketProto.onInvoke = function() {
-console.error('ONINVOKE', this.sessionid, arguments);
-	invoke.apply(this.context, arguments);
+SocketProto.onInvoke = function(args) {
+console.error('ONINVOKE', this.id, args);
+	invoke.apply(this.context, args);
 };
 
 //
@@ -266,7 +273,10 @@ SocketProto.createContext = function(constructor) {
 //
 // default shared context prototype.
 // N.B. anything put in prototype won't be shared with remote end.
-function Context() {}
+function Context() {
+	this.test = dump;
+	this.func = THIS_IS_FUNC;
+}
 
 //
 // setup websocket communication
