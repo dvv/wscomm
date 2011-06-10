@@ -76,7 +76,6 @@ function auth(url) {
 
 var http = Stack.listen(stack, 3000);
 var io = require('./lib/wscomm');
-console.log(io);
 var ws = io.WSComm(http, {
 	// we support only these transports
 	transports: ['websocket'],
@@ -89,35 +88,29 @@ var ws = io.WSComm(http, {
 	}
 });
 
-/*
-//console.log(ws);
-ws.sockets.on('connection', function(client) {
+ws.of('').on('connection', function(client) {
 
-	console.log('CLIENT');//, client);
+	console.log('CLIENT');
+
+	client.update({func: io.THIS_IS_FUNC});
+
+	client.emit('ready', function(x) {
+		console.log('READY CONFIRMED', x, this.id);
+	});
 	//ws.sockets.emit('this', { will: 'be received by everyone' });
-	client.on('private message', function(from, msg) {
-		console.log('I received a private message by ', from, ' saying ', msg);
-	});
-	client.on('message', function() {
-		console.log('I received a message', arguments);
-	});
-	client.on('foo', function() {
-		console.log('FOO', arguments);
-	});
-	client.on('event', function() {
-		console.log('EVENT', arguments);
-	});
-	client.on('disconnect', function() {
-		ws.sockets.emit('user disconnected');
-	});
+	//client.on('private message', function(from, msg) {
+	//	console.log('I received a private message by ', from, ' saying ', msg);
+	//});
 
 });
-*/
 
 var repl = require('repl').start('node> ').context;
 repl.app = model;
 repl.ws = ws;
 repl.c = function(){return ws.sockets.sockets[Object.keys(ws.sockets.sockets)[0]];};
-repl.d = function(){return ws.sockets.sockets[Object.keys(ws.sockets.sockets)[1]];};
+repl.x = function(){return c().context;};
+repl.u1 = function(){repl.c().update({baz:3});};
+repl.u = function(){repl.c().emit('update', {baz:3});};
+repl.i = function(){repl.c().emit('invoke', 'test', function(x){console.log('ACK', arguments);});};
 repl.s = function(){repl.c().json.send({a:1,b:new Date()});};
 process.stdin.on('close', process.exit);

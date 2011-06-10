@@ -104,15 +104,10 @@ Spine.Route.setup();
 Foo.fetch();
 
 // socket
-var s = new io.Socket({
-	host: 'localhost',
-	port: 3000,
-	transports: ['websocket'],
-	'auto connect': false
-});
 var s = new io.WSComm({});
 s.on('connect', function() {
 	console.log('CONNECT');
+	this.update({deep:{func: io.THIS_IS_FUNC}});
 });
 s.on('disconnect', function() {
 	console.log('DISCONNECT');
@@ -123,6 +118,7 @@ s.on('reconnect', function() {
 s.on('message', function() {
 	console.log('MESSAGE', arguments);
 });
-s.on('eventname', function() {
-	console.log('EVENT:eventname', arguments);
+s.of('').on('ready', function(cb) {
+	console.log('EVENT:ready', arguments);
+	cb && cb('OK');
 });

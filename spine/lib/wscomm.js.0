@@ -154,7 +154,7 @@ console.error('INVOKE', arguments);
 //
 // constant to denode in JSON that an object key is function
 //
-io.THIS_IS_FUNC = '~-=(){}=-~';
+var THIS_IS_FUNC = '~-=(){}=-~';
 
 //
 // upgrade socket prototype to support functions calls over the wire
@@ -180,16 +180,12 @@ SocketProto.emitLocal = function() {
 	return emit.apply(this, arguments);
 };
 
-SocketProto.update = function() {
-	return this.emitRemote.apply(this, ['update'].concat(slice.call(arguments)));
-};
-
 //
 // update this object with `changes`, firing 'change' events.
 // if `options.reset` is truthy, remove all properties first.
 // if `options.silent` is truthy, inhibit firing 'change' events
 //
-function update(changes, options, callback) {
+SocketProto.update = function(changes, options, callback) {
 console.error('UPDATE', arguments);
 
 	if (!options) options = {};
@@ -211,6 +207,7 @@ console.error('UPDATE', arguments);
 				var path = root.concat([prop]);
 				var v = src[prop];
 				var isValueArray = Array.isArray(v);
+				var d = dst[prop];
 				// value is not ordinal?
 				if (Object(v) === v) {
 					// value is array?
@@ -226,13 +223,14 @@ console.error('UPDATE', arguments);
 						}
 					}
 				}
-				var d = dst[prop];
 				// value and destination are null/undefined? just skip
 				if (v == null && d == null) continue;
 				// value is a THIS_IS_FUNC signature? make live function
-				if (v === io.THIS_IS_FUNC) {
+				if (v === THIS_IS_FUNC) {
 					// bind RPC caller
 					v = self.emitRemote.bind(self, 'invoke', path);
+					// veto passing this function to remote side
+					v.veto = path;
 				}
 				// value is ordinal. update property if value is
 				// actually new.
@@ -269,7 +267,6 @@ console.error('UPDATE', arguments);
 console.log('EXTENDED', context, changes);
 
 	// notify remote end that context has changed
-	/*
 	if (changed || options.send) {
 		// `options.reset` means to send the whole context.
 		// falsy changes means to send the whole context
@@ -285,13 +282,13 @@ console.log('EMITTING UPDATE', changes, {
 			reset: options.reset,
 			silent: options.ready
 		});
-	}*/
+	}
 
 	// remote context first initialized?
 	options.ready && this.emitLocal('ready', this);
 
 	// continue
-	callable(callback) && callback(null, changes);
+	callable(callback) && callback();
 
 	// allow for chaining
 	return this;
@@ -343,7 +340,7 @@ if (!io.Manager) {
 		// make connection
 		client.connect();
 		// attach event handlers
-		client.of('').on('update', update.bind(client));
+		client.of('').on('update', client.update.bind(client));
 		client.of('').on('invoke', invoke.bind(client.context));
 		return client;
 	};
@@ -405,7 +402,7 @@ io.Manager.prototype.invoke = function(filter, path) {
 			// enter rooms
 			///client.join(client.context.groups);
 			//client.on('update', SocketProto.onUpdate);
-			client.on('update', update);
+			client.on('update', client.update);
 			client.on('invoke', invoke.bind(client.context));
 			//client.on('change', dump);
 			client.on('disconnect', function() {
