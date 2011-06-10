@@ -135,11 +135,6 @@ function deepEqual(a, b) {
 }
 
 //
-// constant to denote in JSON that an object key is function
-//
-io.THIS_IS_FUNC = '~-=(){}=-~';
-
-//
 // update this object with `changes`, firing 'change' events.
 // if `options.reset` is truthy, remove all properties first.
 // if `options.silent` is truthy, inhibit firing 'change' events
@@ -233,6 +228,11 @@ console.error('UPDATE', arguments);
 };
 
 //
+// constant to denote in JSON that an object key is function
+//
+io.THIS_IS_FUNC = '~-=(){}=-~';
+
+//
 // upgrade socket prototype to support functions calls over the wire
 // and state exchange between the two sides
 //
@@ -249,8 +249,31 @@ SocketProto.emitLocal = function() {
 	return emit.apply(this, arguments);
 };
 
+SocketProto.update = function() {
+	return this.emitRemote.apply(this, ['update'].concat(slice.call(arguments)));
+};
+
+SocketProto.invoke = function() {
+	return this.emitRemote.apply(this, ['invoke'].concat(slice.call(arguments)));
+};
+
 //
-// setup shared context
+// create shared context using `this` socket as transport layer
+//
+SocketProto.createContext = function(constructor) {
+	// create shared context
+	this.context = new (constructor || Context)();
+	return this.context;
+};
+
+//
+// default shared context prototype.
+// N.B. anything put in prototype won't be shared with remote end.
+function Context() {
+}
+
+//
+// setup websocket communication
 //
 
 if (!io.Manager) {
@@ -262,7 +285,7 @@ if (!io.Manager) {
 	// N.B. we export constructor, not singleton,
 	// to allow having multiple instances
 
-	io.Context = function(options) {
+	io.WSComm = function(options) {
 		// set default options
 		options = extend({
 			host: location.hostname,
@@ -275,14 +298,12 @@ if (!io.Manager) {
 		// create socket
 		var client = new io.Socket(options);
 		// create shared context
-		client.context = options.context || {};
+		var context = client.createContext(options.proto);
 		// make connection
 		client.connect();
 		// attach event handlers
 		client.of('').on('update', update.bind(client));
 		client.of('').on('invoke', invoke.bind(client.context));
-		client.update = client.emitRemote.bind(client, 'update');
-		client.invoke = client.emitRemote.bind(client, 'invoke');
 		return client;
 	};
 
@@ -292,7 +313,7 @@ if (!io.Manager) {
 	// server
 	//
 
-	io.Context = function(server, options) {
+	io.WSComm = function(server, options) {
 
 		// set default options
 		options = extend({
@@ -306,13 +327,17 @@ if (!io.Manager) {
 
 		// level ground logic
 		ws.of('').on('connection', function(client) {
-			// create shared context
-			client.context = options.context || {};
+			// initialize shared context
+			client.createContext(options.proto);
+			// enter rooms
+			///client.join(client.context.groups);
+			//client.on('update', SocketProto.onUpdate);
 			client.on('update', update);
 			client.on('invoke', invoke.bind(client.context));
-			client.update = client.emitRemote.bind(client, 'update');
-			client.invoke = client.emitRemote.bind(client, 'invoke');
+			//client.on('change', dump);
 			client.on('disconnect', function() {
+				// leave rooms
+				///client.leave(client.context.groups);
 				// flush shared context
 				delete client.context;
 			});

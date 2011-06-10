@@ -104,7 +104,7 @@ Spine.Route.setup();
 Foo.fetch();
 
 // socket
-var s = new io.WSComm({});
+var s = new io.Context({});
 s.on('connect', function() {
 	console.log('CONNECT');
 	this.update({deep:{func: io.THIS_IS_FUNC}});

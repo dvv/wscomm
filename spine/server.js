@@ -76,7 +76,7 @@ function auth(url) {
 
 var http = Stack.listen(stack, 3000);
 var io = require('./lib/wscomm');
-var ws = io.WSComm(http, {
+var ws = io.Context(http, {
 	// we support only these transports
 	transports: ['websocket'],
 	// reuse cookie session middleware
