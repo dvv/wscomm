@@ -143,6 +143,7 @@ var THIS_IS_FUNC = '~-=(){}=-~';
 // update this object with `changes`, firing 'change' events.
 // if `options.reset` is truthy, remove all properties first.
 // if `options.silent` is truthy, inhibit firing 'change' events
+// if `options.remote` is truthy, ???
 //
 function update(changes, options, callback) {
 console.error('UPDATE', arguments);
@@ -150,8 +151,7 @@ console.error('UPDATE', arguments);
 	if (!options) options = {};
 	var self = this;
 	var context = this.context;
-	var achanges = [];
-	var ochanges = {};
+	var changed = false;
 
 	//
 	// deeply extend the `dst` with properties of `src`.
@@ -160,7 +160,7 @@ console.error('UPDATE', arguments);
 	// N.B. arrays are cloned
 	//
 	function extend(dst, src) {
-		function _ext(dst, src, root, ochanges) {
+		function _ext(dst, src, root) {
 			if (Object(src) !== src) return dst;
 			for (var prop in src) if (src.hasOwnProperty(prop)) {
 				// compose the path to this property
@@ -186,58 +186,61 @@ console.error('UPDATE', arguments);
 				var d = dst[prop];
 				// value and destination are null/undefined? just skip
 				if (v == null && d == null) continue;
-				// recursion needed?
-				if (Object(d) === d && !isValueArray && !isValueCallable) {
-					// ...recurse to merge
-					if (!ochanges.hasOwnProperty(prop)) ochanges[prop] = {};
-					_ext(d, v, path, ochanges[prop]);
-					//if (!Object.keys(chg[prop])) delete chg[prop];
-					continue;
-				}
-				// process real changes
-				if (deepEqual(v, d)) continue;
-				achanges.push([path, v]);
-
 				// value is a THIS_IS_FUNC signature? make live function
+console.log('V', path, v, isValueCallable);
 				if (v === THIS_IS_FUNC) {
 					// bind RPC caller
 console.log('inflate', path);
 					v = self.emitRemote.bind(self, 'invoke', path);
+				} else if (isValueCallable) {
+console.log('deflate', path);
+					v = THIS_IS_FUNC;
+				}
+				// value is ordinal
+
+				// update property if value is actually new.
+				// emit self's "change:<property>" event
+				if (!deepEqual(v, d) && !options.silent) {
+					changed = true;
+					self.emitLocal('change:' + prop, v, d, dst);
 				}
 
+				// recursion needed?
+				if (Object(d) === d && !isValueArray && !isValueCallable) {
+					// ...recurse to merge
+console.log('RECURSE', path, d, v);
+					_ext(d, v, path);
 				// new value is undefined or null?
-				if (v == null) {
+				} else if (v == null) {
 					// ...remove the property
 					delete dst[prop];
 				} else {
 					// update the property
 					dst[prop] = v;
 				}
-				ochanges[prop] = isValueCallable ? THIS_IS_FUNC : v;
 			}
 		}
-		_ext(dst, src, [], ochanges);
+		_ext(dst, src, []);
+		// emit "change" event if anything has changed
+		changed && self.emitLocal('change', src, options);
 	}
 
 	// purge old properties properties
 	if (options.reset) {
 		for (var i in context) delete context[i];
 	}
+
+/*
+			client.emitRemote('update', changes, opts, function(err) {
+				if (!err) {
+					update.call(client, changes, options);
+*/
+
 	// apply changes
-	if (Array.isArray(changes)) {
-		changes.forEach(function(c) {
-			// TODO: c === null && act-as-options.reset
-			extend(context, c);
-		});
-	} else {
-		extend(context, changes);
-	}
-	// emit "change" event if anything has changed
-	if (!options.silent && achanges.length) {
-		console.log('CHANGED', achanges, ochanges, changes);
-		this.emitLocal('change', achanges);
-		this.emitRemote('update', ochanges, options, callback);
-	}
+	extend(context, changes);
+
+	// allow async continuation style
+	callable(callback) && callback(null, changes);
 
 	// allow chaining
 	return this;
@@ -295,7 +298,17 @@ if (!io.Manager) {
 		// attach event handlers
 		client.of('').on('update', update.bind(client));
 		client.of('').on('invoke', invoke.bind(client.context));
-		client.update = update.bind(client);
+		//client.update = client.emitRemote.bind(client, 'update');
+		client.update = function(changes, options, callback) {
+			if (!options) options = {};
+			var opts = extend({remote: true}, options);
+			client.emitRemote('update', changes, opts, function(err) {
+				if (!err) {
+					update.call(client, changes, options);
+				}
+				callable(callback) && callback(err, result);
+			});
+		};
 		client.invoke = client.emitRemote.bind(client, 'invoke');
 		return client;
 	};
@@ -324,7 +337,19 @@ if (!io.Manager) {
 			client.context = options.context || {};
 			client.on('update', update);
 			client.on('invoke', invoke.bind(client.context));
-			client.update = update.bind(client);
+
+		//client.update = client.emitRemote.bind(client, 'update');
+		client.update = function(changes, options, callback) {
+			if (!options) options = {};
+			var opts = extend({remote: true}, options);
+			client.emitRemote('update', changes, opts, function(err) {
+				if (!err) {
+					update.call(client, changes, options);
+				}
+				callable(callback) && callback(err, result);
+			});
+		};
+
 			client.invoke = client.emitRemote.bind(client, 'invoke');
 			client.on('disconnect', function() {
 				// flush shared context

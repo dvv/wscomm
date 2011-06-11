@@ -107,7 +107,7 @@ Foo.fetch();
 var s = new io.Context({});
 s.on('connect', function() {
 	console.log('CONNECT');
-	this.update({deep:{func: io.THIS_IS_FUNC}});
+	this.update({deep:{func: io.dump}});
 });
 s.on('disconnect', function() {
 	console.log('DISCONNECT');

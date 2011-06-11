@@ -92,7 +92,7 @@ ws.of('').on('connection', function(client) {
 
 	console.log('CLIENT');
 
-	client.update({func: io.THIS_IS_FUNC});
+	client.update({func: io.dump});
 
 	client.emit('ready', function(x) {
 		console.log('READY CONFIRMED', x, this.id);
