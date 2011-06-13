@@ -10,7 +10,18 @@
     MIT License. http://github.com/280north/narwhal/blob/master/README.md
 */
 
-(typeof define === "function" ? define : function($) { $(); })(function(require, exports, module, undefined) {
+(function (definition) {
+    // RequireJS
+    if (typeof define === "function") {
+        define(function () {
+            definition();
+        });
+    // CommonJS and <script>
+    } else {
+        definition();
+    }
+
+})(function (undefined) {
 
 /**
  * Brings an environment as close to ECMAScript 5 compliance
@@ -248,7 +259,21 @@ if (!Array.prototype.some) {
 if (!Array.prototype.reduce) {
     Array.prototype.reduce = function reduce(fun /*, initial*/) {
         var len = +this.length;
-        if (typeof fun !== "function" || fun instanceof RegExp)
+        // Whether to include (... || fun instanceof RegExp)
+        // in the following expression to trap cases where
+        // the provided function was actually a regular
+        // expression literal, which in V8 and
+        // JavaScriptCore is a typeof "function".  Only in
+        // V8 are regular expression literals permitted as
+        // reduce parameters, so it is desirable in the
+        // general case for the shim to match the more
+        // strict and common behavior of rejecting regular
+        // expressions.  However, the only case where the
+        // shim is applied is IE's Trident (and perhaps very
+        // old revisions of other engines).  In Trident,
+        // regular expressions are a typeof "object", so the
+        // following guard alone is sufficient.
+        if (typeof fun !== "function")
             throw new TypeError();
 
         // no value to return if no initial value and an empty array
@@ -467,7 +492,7 @@ if (!Object.defineProperty) {
     Object.defineProperty = function defineProperty(object, property, descriptor) {
         if (typeof object !== "object" && typeof object !== "function")
             throw new TypeError(ERR_NON_OBJECT_TARGET + object);
-        if (typeof object !== "object" || object === null)
+        if (typeof descriptor !== "object" || descriptor === null)
             throw new TypeError(ERR_NON_OBJECT_DESCRIPTOR + descriptor);
 
         // If it's a data property.

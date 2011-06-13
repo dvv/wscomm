@@ -79,6 +79,7 @@ var io = require('./lib/wscomm');
 var ws = io.Context(http, {
 	// we support only these transports
 	transports: ['websocket'],
+	'log level': 2,
 	// reuse cookie session middleware
 	authorization: function(data, next) {
 		sessionHandler(data.request, {}, function() {

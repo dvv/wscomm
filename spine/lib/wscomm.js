@@ -1,5 +1,7 @@
 /*!
  *
+ * Shared context for socket.io
+ *
  * Copyright(c) 2011 Vladimir Dronnikov <dronnikov@gmail.com>
  * MIT Licensed
  *
@@ -9,8 +11,8 @@
 'use strict';
 
 //
-// N.B. we rely on es5-shim is loaded
-// TODO: provide bundled
+// N.B. we rely on es5 features. es5-shim should be loaded for old
+// browsers. TODO: provide bundled?
 //
 
 //
@@ -59,16 +61,15 @@ function extend(target, additional) {
 // determine loosely if obj is callable
 //
 function callable(obj) {
-	// N.B. RegExp in V8 is also of type function,
-	// however we can punt on this
-	return typeof obj === 'function'; // && obj.call;
+	// N.B. RegExp in V8 is also of type 'function'!
+	return typeof obj === 'function' && obj.call;
 }
 
 //
 // safely get a deep property of `obj` descending using elements
 // in `path`
 //
-function drill(obj, path) {
+function get(obj, path) {
 	var part;
 	if (Array.isArray(path)) {
 		for (var i = 0, l = path.length; i < l; i++) {
@@ -89,7 +90,7 @@ function drill(obj, path) {
 //
 function invoke(path /*, args... */) {
 console.error('INVOKE', arguments);
-	var fn = drill(this, path);
+	var fn = get(this, path);
 	callable(fn) && fn.apply(this, slice.call(arguments, 1));
 }
 
@@ -110,7 +111,9 @@ function deepEqual(a, b) {
 	// one is falsy and the other truthy
 	if ((!a && b) || (a && !b)) return false;
 	// check dates' integer values
-	if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+	if (a instanceof Date && b instanceof Date) {
+		return a.getTime() === b.getTime();
+	}
 	// both are NaN?
 	if (a !== a && b !== b) return false;
 	// compare regular expressions
@@ -129,7 +132,9 @@ function deepEqual(a, b) {
 	// different object sizes?
 	if (aKeys.length != bKeys.length) return false;
 	// recursive comparison of contents
-	for (var key in a) if (!(key in b) || !deepEqual(a[key], b[key])) return false;
+	for (var key in a) {
+		if (!(key in b) || !deepEqual(a[key], b[key])) return false;
+	}
 	// they are equal
 	return true;
 }
@@ -140,12 +145,50 @@ function deepEqual(a, b) {
 var THIS_IS_FUNC = '~-=(){}=-~';
 
 //
-// update this object with `changes`, firing 'change' events.
-// if `options.reset` is truthy, remove all properties first.
-// if `options.silent` is truthy, inhibit firing 'change' events
+// upgrade io.Socket
 //
-function update(changes, options, callback) {
-console.error('UPDATE', arguments);
+
+var SocketProto = io.Socket.prototype;
+
+//
+// disambiguate event handling
+//
+
+SocketProto.emitRemote = function() {
+	var obj = this.of ? this.of('') : this;
+	obj.emit.apply(obj, arguments);
+};
+
+SocketProto.emitLocal = function() {
+	var emit = this.of ? this.emit : this.$emit;
+	emit.apply(this, arguments);
+};
+
+//
+// create shared context
+//
+
+SocketProto.createContext = function(proto) {
+	this.context = proto || {};
+	// attach event handlers
+	if (this.of) {
+		this.of('').on('update', this.update.bind(this));
+		this.of('').on('invoke', invoke.bind(this.context));
+	} else {
+		this.on('update', this.update);
+		this.on('invoke', invoke.bind(this.context));
+	}
+	// provide shortcut functions
+	this.invoke = this.emitRemote.bind(this, 'invoke');
+};
+
+//
+// update `this.context` with `changes`.
+// if `options.reset` is truthy, remove all properties first.
+// if `options.silent` is truthy, inhibit firing 'change' event
+//
+SocketProto.update = function(changes, options, callback) {
+console.error('UPDATE', arguments, this);
 
 	if (!options) options = {};
 	var self = this;
@@ -162,9 +205,10 @@ console.error('UPDATE', arguments);
 	function extend(dst, src) {
 		function _ext(dst, src, root, ochanges) {
 			if (Object(src) !== src) return dst;
-			for (var prop in src) if (src.hasOwnProperty(prop)) {
+			for (var prop in src) if (has(src, prop)) {
 				// compose the path to this property
 				var path = root.concat([prop]);
+				// cache new value
 				var v = src[prop];
 				var isValueArray = Array.isArray(v);
 				var isValueCallable = callable(v);
@@ -177,7 +221,7 @@ console.error('UPDATE', arguments);
 					// value is object?
 					} else {
 						// destination has no such property?
-						if (!dst.hasOwnProperty(prop)) {
+						if (!has(dst, prop)) {
 							// ...create one
 							dst[prop] = {};
 						}
@@ -188,32 +232,42 @@ console.error('UPDATE', arguments);
 				if (v == null && d == null) continue;
 				// recursion needed?
 				if (Object(d) === d && !isValueArray && !isValueCallable) {
-					// ...recurse to merge
-					if (!ochanges.hasOwnProperty(prop)) ochanges[prop] = {};
+					// make room for real changes
+					if (!has(ochanges, prop)) {
+						var newly = true;
+						ochanges[prop] = {};
+					}
 					_ext(d, v, path, ochanges[prop]);
-					//if (!Object.keys(chg[prop])) delete chg[prop];
+					// if no real changes occured, drop corresponding key
+					if (newly && !Object.keys(ochanges[prop]).length) {
+						delete ochanges[prop];
+					}
+					/*var chg = {};
+					_ext(d, v, path, chg);
+					if (Object.keys(chg).length) ochanges[prop] = chg;*/
 					continue;
 				}
-				// process real changes
+				// test if property is really to be changed
 				if (deepEqual(v, d)) continue;
+				// we are here iff property needs to be changed
 				achanges.push([path, v]);
-
-				// value is a THIS_IS_FUNC signature? make live function
-				if (v === THIS_IS_FUNC) {
-					// bind RPC caller
-console.log('inflate', path);
-					v = self.emitRemote.bind(self, 'invoke', path);
-				}
-
 				// new value is undefined or null?
 				if (v == null) {
 					// ...remove the property
 					delete dst[prop];
 				} else {
-					// update the property
-					dst[prop] = v;
+					// update the property.
+					// honor remote functions denoted as THIS_IS_FUNC signatures
+					dst[prop] = v === THIS_IS_FUNC ?
+						self.emitRemote.bind(self, 'invoke', path) :
+						v;
+					// callables go to remote side as THIS_IS_FUNC signatures
+					// which we make live functions there (see above).
+					// N.B. recovered functions don't go in changes
+					if (v !== THIS_IS_FUNC) {
+						ochanges[prop] = isValueCallable ? THIS_IS_FUNC : v;
+					}
 				}
-				ochanges[prop] = isValueCallable ? THIS_IS_FUNC : v;
 			}
 		}
 		_ext(dst, src, [], ochanges);
@@ -226,37 +280,32 @@ console.log('inflate', path);
 	// apply changes
 	if (Array.isArray(changes)) {
 		changes.forEach(function(c) {
-			// TODO: c === null && act-as-options.reset
+			// N.B. c === `null` purges the current context
+			if (c === null) {
+				for (var i in context) delete context[i];
+			}
+			// N.B. false positives may occur in ochanges, since deepEqual()
+			// tests the value of previous assignment step:
+			// update([{a:1},{a:2},{a:1}]) will always report change to "a"
 			extend(context, c);
 		});
 	} else {
 		extend(context, changes);
 	}
-	// emit "change" event if anything has changed
+	// emit "change" event
 	if (!options.silent && achanges.length) {
 		console.log('CHANGED', achanges, ochanges, changes);
-		this.emitLocal('change', achanges);
-		this.emitRemote('update', ochanges, options, callback);
+		this.emitLocal('change', achanges, ochanges);
+		// notify remote end of actual changes
+		if (Object.keys(ochanges).length) {
+			this.emitRemote('update', ochanges, options, callback);
+		} else if (callable(callback)) {
+			callback(null, ochanges);
+		}
 	}
 
 	// allow chaining
 	return this;
-};
-
-//
-// disambiguate event handling
-//
-
-var SocketProto = io.Socket.prototype;
-
-SocketProto.emitRemote = function() {
-	var obj = this.of ? this.of('') : this;
-	return obj.emit.apply(obj, arguments);
-};
-
-SocketProto.emitLocal = function() {
-	var emit = this.of ? this.emit : this.$emit;
-	return emit.apply(this, arguments);
 };
 
 //
@@ -283,20 +332,12 @@ if (!io.Manager) {
 			port: location.port,
 			secure: location.protocol === 'https:',
 			transports: ['websocket', 'xhr-polling'],
-			'auto connect': false,
-			reconnect: false
+			//reconnect: false
 		}, options || {});
 		// create socket
 		var client = new io.Socket(options);
 		// create shared context
-		client.context = options.context || {};
-		// make connection
-		client.connect();
-		// attach event handlers
-		client.of('').on('update', update.bind(client));
-		client.of('').on('invoke', invoke.bind(client.context));
-		client.update = update.bind(client);
-		client.invoke = client.emitRemote.bind(client, 'invoke');
+		client.createContext(options.context);
 		return client;
 	};
 
@@ -315,24 +356,19 @@ if (!io.Manager) {
 
 		// start manager
 		var ws = io.listen(server);
-		// override TJ-style of settings ;)
 		extend(ws.settings, options);
 
 		// level ground logic
 		ws.of('').on('connection', function(client) {
 			// create shared context
-			client.context = options.context || {};
-			client.on('update', update);
-			client.on('invoke', invoke.bind(client.context));
-			client.update = update.bind(client);
-			client.invoke = client.emitRemote.bind(client, 'invoke');
+			client.createContext(options.context);
 			client.on('disconnect', function() {
 				// flush shared context
 				delete client.context;
 			});
 		});
 
-		// N.B. the rest of logic is left for user code.
+		// N.B. the rest of logic is left to user code.
 		// just add another event listeners!
 
 		// return manager
